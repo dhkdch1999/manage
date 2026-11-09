@@ -101,6 +101,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .draft { display: grid; grid-template-columns: 220px 1fr 220px; gap: 14px; }
 .draft-side .slot { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; background: var(--panel2); min-height: 46px; }
 .draft-side .slot.sel { border-color: var(--gold); }
+.draft-side .slot.swap { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124, 92, 255, .4); }
+.draft-side.mine .slot:hover { border-color: var(--accent); }
 .draft-side .slot .em { font-size: 22px; width: 28px; text-align: center; }
 .draft-side.blue h3 { color: var(--blue); } .draft-side.red h3 { color: var(--red); }
 .bans { display: flex; gap: 6px; margin-bottom: 10px; }
@@ -114,7 +116,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .hero .em { font-size: 26px; }
 .hero .nm { font-weight: 700; font-size: 12px; margin-top: 2px; }
 .hero .rl { font-size: 10px; color: var(--muted); }
-.hero .ms { font-size: 10px; margin-top: 3px; }
+.hero .ms { font-size: 10px; margin-top: 3px; padding: 0 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hero.taken { opacity: .22; cursor: not-allowed; }
 .hero .patch { position: absolute; top: 3px; right: 5px; font-size: 10px; font-weight: 800; }
 .hero .ctr { position: absolute; top: 3px; left: 5px; font-size: 10px; font-weight: 800; }

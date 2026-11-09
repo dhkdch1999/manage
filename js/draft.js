@@ -41,6 +41,15 @@ G.Draft = {
     d.picks[c.side].push({ heroId: heroId, playerId: playerId }); d.step++;
   },
 
+  // 같은 팀 두 선수의 영웅 맞바꾸기
+  swap: function (d, side, pidA, pidB) {
+    var a = d.picks[side].filter(function (p) { return p.playerId === pidA; })[0];
+    var b = d.picks[side].filter(function (p) { return p.playerId === pidB; })[0];
+    if (!a || !b) return false;
+    a.playerId = pidB; b.playerId = pidA;
+    return true;
+  },
+
   // ---- AI ----
   heroScore: function (d, side, heroId, rng) {
     var h = G.HERO_BY_ID[heroId];

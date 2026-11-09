@@ -388,7 +388,7 @@
     modal('<h2>🎮 게임 방법</h2><ol style="line-height:1.8">' +
       '<li><b>목표</b>: 2부 리그에서 시작해 승격 → 1부 우승 → 세계 대회 우승!</li>' +
       '<li><b>한 주</b> = 경기 1번. 홈에서 <b>경기 준비</b>를 누르면 전술 설정 → 밴픽 → 자동 전투가 진행됩니다.</li>' +
-      '<li><b>밴픽</b>: 양 팀 2밴 후 1-2-2-2-2-1 순서로 픽. 선수 슬롯을 고른 뒤 영웅을 누르세요. 숙련도가 높은 영웅일수록 강합니다.</li>' +
+      '<li><b>밴픽</b>: 양 팀 2밴 후 1-2-2-2-2-1 순서로 픽. 영웅을 누르면 가장 잘 다루는 선수에게 자동 배정되고, 빈 슬롯을 먼저 누르면 그 선수에게 줍니다. 밴픽이 끝나면 슬롯 두 개를 눌러 선수끼리 영웅을 바꾼 뒤 경기를 시작하세요.</li>' +
       '<li><b>상성</b>: 돌진형 ▶ 원거리형 ▶ 탱커형 ▶ 돌진형. 영웅 카드의 ▲/▼ 표시를 참고하세요.</li>' +
       '<li><b>전술</b>: 공격적 / 균형 / 수비적 / <b>변칙적</b>. 변칙적은 기습·분산 압박·페이크 후퇴를 시도하며, 같은 상대에게 연속으로 쓰면 간파당합니다. 하프타임에 한 번 바꿀 수 있어요.</li>' +
       '<li><b>점수</b>: 킬 1점, 중앙 수호자 처치 ' + C.OBJ_POINTS + '점. 90초 후 점수가 높은 팀 승리 (동점이면 서든데스).</li>' +
@@ -488,8 +488,10 @@
     var mine = cur && cur.side === m.side;
     var taken = G.Draft.taken(d);
     var free = G.Draft.freePlayers(d, m.side);
-    if (!m.selPlayer || !free.some(function (p) { return p.id === m.selPlayer; })) m.selPlayer = free[0] ? free[0].id : null;
+    // 선수 슬롯은 직접 골랐을 때만 지정, 아니면 픽할 때 가장 잘 다루는 선수에게 자동 배정
+    if (m.selPlayer && !free.some(function (p) { return p.id === m.selPlayer; })) m.selPlayer = null;
     var selP = m.selPlayer ? L.p(m.selPlayer) : null;
+    var done = G.Draft.done(d);
     var enemyPicks = d.picks[1 - m.side].map(function (p) { return p.heroId; });
     var myPicks = d.picks[m.side].map(function (p) { return p.heroId; });
     var comp = G.Hero.compScore(myPicks, enemyPicks);
@@ -502,12 +504,14 @@
       var slots = isMe ? d.players[s].map(function (p) {
         var pk = picks.filter(function (x) { return x.playerId === p.id; })[0];
         var sel = !pk && m.selPlayer === p.id && mine && cur.type === 'pick';
-        return '<div class="slot ' + (sel ? 'sel' : '') + '" ' + (!pk ? 'data-act="slot" data-pid="' + p.id + '" style="cursor:pointer"' : '') + '><span class="em">' + (pk ? G.HERO_BY_ID[pk.heroId].emoji : '·') + '</span><div><b>' + esc(p.nick) + '</b><div class="muted" style="font-size:11px">' + G.ROLES[p.role] + (pk ? ' · ' + G.HERO_BY_ID[pk.heroId].name + ' (' + Math.round(p.mastery[pk.heroId] || 0) + ')' : '') + '</div></div></div>';
+        var sw = pk && m.swapSel === p.id;
+        var act = pk ? 'data-act="swap" data-pid="' + p.id + '" title="다른 선수와 영웅 바꾸기"' : 'data-act="slot" data-pid="' + p.id + '" title="이 선수에게 다음 픽 배정"';
+        return '<div class="slot ' + (sel ? 'sel' : '') + (sw ? ' swap' : '') + '" ' + act + ' style="cursor:pointer"><span class="em">' + (pk ? G.HERO_BY_ID[pk.heroId].emoji : '·') + '</span><div><b>' + esc(p.nick) + '</b><div class="muted" style="font-size:11px">' + G.ROLES[p.role] + (pk ? ' · ' + G.HERO_BY_ID[pk.heroId].name + ' (' + Math.round(p.mastery[pk.heroId] || 0) + ')' : '') + '</div></div></div>';
       }).join('') : [0, 1, 2, 3, 4].map(function (i) {
         var pk = picks[i];
         return '<div class="slot"><span class="em">' + (pk ? G.HERO_BY_ID[pk.heroId].emoji : '·') + '</span><div>' + (pk ? '<b>' + esc(L.p(pk.playerId).nick) + '</b><div class="muted" style="font-size:11px">' + G.HERO_BY_ID[pk.heroId].name + '</div>' : '<span class="muted">대기</span>') + '</div></div>';
       }).join('');
-      return '<div class="draft-side ' + (s === 0 ? 'blue' : 'red') + '"><h3>' + esc(t.name) + (isMe ? ' (우리)' : '') + '</h3>' +
+      return '<div class="draft-side ' + (s === 0 ? 'blue' : 'red') + (isMe ? ' mine' : '') + '"><h3>' + esc(t.name) + (isMe ? ' (우리)' : '') + '</h3>' +
         '<div class="bans">' + [0, 1].map(function (i) { var b = d.bans[s][i]; return '<div class="ban">' + (b ? G.HERO_BY_ID[b].emoji : '') + '</div>'; }).join('') + '</div>' + slots + '</div>';
     }
 
@@ -519,22 +523,27 @@
       else if (enemyPicks.some(function (e) { return G.Hero.beats(e, h.id); })) ctr = '<span class="ctr red">▼</span>';
       var mod = G.state.heroMods[h.id] || 1;
       var patch = mod > 1.001 ? '<span class="patch green">↑</span>' : mod < 0.999 ? '<span class="patch red">↓</span>' : '';
-      var ms = selP ? Math.round(selP.mastery[h.id] || 0) : null;
+      var msP = selP || (free.length ? free.slice().sort(function (a, b) { return G.Draft.fit(b, h.id) - G.Draft.fit(a, h.id); })[0] : null);
+      var ms = msP ? Math.round(msP.mastery[h.id] || 0) : null;
       return '<div class="hero ' + (tk ? 'taken' : '') + '" ' + (!tk && mine ? 'data-act="hero" data-h="' + h.id + '"' : '') + ' title="' + esc(skillText(h.skill) + ' / 궁: ' + skillText(h.ult)) + '">' + ctr + patch +
         '<div class="em">' + h.emoji + '</div><div class="nm">' + esc(h.name) + '</div><div class="rl">' + G.ROLES[h.role] + ' · ' + G.ARCH[h.arch] + '</div>' +
-        (ms != null && cur && cur.type === 'pick' ? '<div class="ms" style="color:' + (ms >= 60 ? 'var(--green)' : ms >= 30 ? 'var(--text)' : 'var(--muted)') + '">숙련 ' + ms + '</div>' : '') +
+        (ms != null && cur && cur.type === 'pick' ? '<div class="ms" style="color:' + (ms >= 60 ? 'var(--green)' : ms >= 30 ? 'var(--text)' : 'var(--muted)') + '">숙련 ' + ms + (selP ? '' : ' · ' + esc(msP.nick)) + '</div>' : '') +
         '<span class="tier-badge" style="background:' + G.TIER.COLORS[tiers[h.id]] + '">' + tiers[h.id] + '</span></div>';
     }).join('');
 
-    var turn = !cur ? '밴픽 완료!' : (mine ? (cur.type === 'ban' ? '🚫 우리 차례 — 밴할 영웅을 고르세요' : '✅ 우리 차례 — ' + (selP ? esc(selP.nick) + '에게 줄 ' : '') + '영웅을 고르세요') : '⏳ 상대가 ' + (cur.type === 'ban' ? '밴' : '픽') + ' 중...');
+    var turn = done ? '✅ 밴픽 완료 — 우리 선수 슬롯 두 개를 차례로 누르면 영웅을 맞바꿀 수 있어요' :
+      (mine ? (cur.type === 'ban' ? '🚫 우리 차례 — 밴할 영웅을 고르세요' :
+        '✅ 우리 차례 — ' + (selP ? esc(selP.nick) + '에게 줄 영웅을 고르세요' : '영웅을 고르세요 (가장 잘 다루는 선수에게 자동 배정)')) :
+        '⏳ 상대가 ' + (cur.type === 'ban' ? '밴' : '픽') + ' 중...');
+    if (m.swapSel) turn = '🔁 ' + esc(L.p(m.swapSel).nick) + ' 선택됨 — 영웅을 바꿀 다른 선수를 누르세요 (같은 선수를 다시 누르면 취소)';
     return '<div class="main" style="margin:0 auto;max-width:1300px"><div class="row"><h2>🎯 밴픽</h2><span class="muted">전술: ' + C.TACTICS[m.tactic].name + '</span><span class="spacer"></span>' +
       '<span>조합 상성 <b class="' + (comp > 0 ? 'green' : comp < 0 ? 'red' : '') + '">' + (comp > 0 ? '+' : '') + comp + '</b></span>' +
-      '<button data-act="tier">📊 티어리스트</button><button data-act="draft-auto">🤖 남은 밴픽 자동</button></div>' +
+      '<button data-act="tier">📊 티어리스트</button>' + (done ? '<button class="primary" data-act="draft-confirm">경기 시작 ▶</button>' : '<button data-act="draft-auto">🤖 남은 밴픽 자동</button>') + '</div>' +
       '<div class="draft">' + sideCol(0) +
-      '<div><div class="turn ' + (mine ? 'mine' : 'theirs') + '">' + turn + '</div><div class="filters">' +
+      '<div><div class="turn ' + (mine || done || m.swapSel ? 'mine' : 'theirs') + '">' + turn + '</div><div class="filters">' +
       roles.map(function (r) { return '<button class="small ' + (m.filter === r[0] ? 'on' : '') + '" data-act="draft-filter" data-v="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '</div><div class="hero-grid">' + grid + '</div>' +
-      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 오른쪽 아래 글자는 현재 패치 티어 · 숙련도는 선택한 선수 기준 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
+      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 오른쪽 아래 글자는 현재 패치 티어 · 숙련도는 선택한 선수(없으면 가장 잘 다루는 선수) 기준 · 빈 슬롯을 누르면 다음 픽을 그 선수에게 배정 · 채워진 슬롯 두 개를 누르면 영웅 스왑 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
       sideCol(1) + '</div></div>';
   }
 
@@ -542,7 +551,7 @@
     var m = UI.match;
     if (!m || m.stage !== 'draft') return;
     var d = m.draft;
-    if (G.Draft.done(d)) { setTimeout(startBattle, 600); return; }
+    if (G.Draft.done(d)) { render(); return; } // 스왑할 시간을 주고, '경기 시작'을 눌러야 전투 시작
     var cur = G.Draft.current(d);
     if (cur.side !== m.side) {
       m.draftTimer = setTimeout(function () {
@@ -830,12 +839,29 @@
     'tier': function () { tierModal(); },
     'tier-patch': function (el) { tierModal(+el.dataset.i); },
     'draft-filter': function (el) { UI.match.filter = el.dataset.v; render(); },
-    'slot': function (el) { UI.match.selPlayer = el.dataset.pid; render(); },
+    'slot': function (el) {
+      var m = UI.match;
+      m.swapSel = null;
+      m.selPlayer = m.selPlayer === el.dataset.pid ? null : el.dataset.pid;
+      render();
+    },
+    'swap': function (el) {
+      var m = UI.match, pid = el.dataset.pid;
+      if (!m.swapSel) { m.swapSel = pid; render(); return; }
+      if (m.swapSel !== pid) {
+        G.Draft.swap(m.draft, m.side, m.swapSel, pid);
+        toast('🔁 ' + esc(L.p(m.swapSel).nick) + ' ↔ ' + esc(L.p(pid).nick) + ' 영웅 교체');
+      }
+      m.swapSel = null;
+      render();
+    },
+    'draft-confirm': function () { UI.match.swapSel = null; startBattle(); },
     'hero': function (el) {
       var m = UI.match, d = m.draft, cur = G.Draft.current(d);
       if (!cur || cur.side !== m.side) return;
       if (cur.type === 'ban') G.Draft.ban(d, el.dataset.h);
-      else G.Draft.pick(d, el.dataset.h, m.selPlayer);
+      else G.Draft.pick(d, el.dataset.h, m.selPlayer || G.Draft.bestPlayerFor(d, m.side, el.dataset.h).id);
+      m.selPlayer = null; m.swapSel = null;
       render(); draftTick();
     },
     'draft-auto': function () {
