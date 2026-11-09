@@ -121,6 +121,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .filters { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 .filters button.on { border-color: var(--accent); color: #fff; background: #241d42; }
 
+.hero .tier-badge { position: absolute; bottom: 4px; right: 5px; font-size: 10px; font-weight: 900; color: #111; border-radius: 4px; padding: 0 4px; line-height: 15px; }
+.tier-list { display: flex; flex-direction: column; gap: 6px; }
+.tier-row { display: flex; gap: 8px; align-items: stretch; }
+.tier-lbl { width: 46px; flex: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: #111; }
+.tier-heroes { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; background: var(--panel2); border-radius: 8px; padding: 6px; min-height: 58px; align-items: center; }
+.tier-chip { display: flex; gap: 6px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px 5px 6px; font-size: 12px; }
+.tier-chip .em { font-size: 24px; }
+.tier-chip .tier-num { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
 /* ---------- 전투 ---------- */
 .battle-wrap { display: grid; grid-template-columns: 1fr 280px; gap: 14px; }
 .scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 18px; margin-bottom: 10px; }

@@ -104,6 +104,15 @@ G.League = (function () {
   // ---------- 시즌 ----------
   L.startSeason = function (first) {
     var st = S();
+    // 지난 패치 기록 보관 (티어리스트용)
+    st.patchHistory = st.patchHistory || [];
+    if (!first) {
+      var prevS = st.season - 1;
+      st.patchHistory.push({
+        season: prevS, mods: JSON.parse(JSON.stringify(st.heroMods)), notes: st.patchNotes || [],
+        stats: st.heroStats || {}, matches: st.results.filter(function (r) { return r.season === prevS; }).length
+      });
+    }
     st.week = 0; st.phase = 'season'; st.bracket = {}; st._fxKey = null;
     // 지난 시즌 경기 기록은 우리 팀 경기만 남긴다 (저장 용량 관리)
     var uid0 = st.userTeamId;
@@ -150,6 +159,22 @@ G.League = (function () {
     var second = rounds.map(function (g) { return g.map(function (x) { return [x[1], x[0]]; }); });
     return rounds.concat(second);
   }
+
+  // 패치 목록: 지난 시즌들 + 현재
+  L.patches = function () {
+    var st = S(), hist = st.patchHistory || [];
+    var list = hist.map(function (h, i) {
+      return { season: h.season, mods: h.mods, prevMods: i > 0 ? hist[i - 1].mods : null, stats: h.stats, matches: h.matches, notes: h.notes };
+    });
+    list.push({ season: st.season, mods: st.heroMods, prevMods: hist.length ? hist[hist.length - 1].mods : null, stats: st.heroStats,
+      matches: st.results.filter(function (r) { return r.season === st.season; }).length, notes: st.patchNotes || [], current: true });
+    return list;
+  };
+  L.currentTiers = function () {
+    var ps = L.patches(), map = {};
+    G.Hero.tierList(ps[ps.length - 1]).forEach(function (r) { map[r.id] = r.tier; });
+    return map;
+  };
 
   L.stageName = function (stage) {
     return { regular: '정규 시즌', semi: '플레이오프 4강', final: '플레이오프 결승', wsemi: '세계 대회 4강', wfinal: '세계 대회 결승' }[stage] || stage;

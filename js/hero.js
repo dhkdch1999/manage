@@ -27,6 +27,33 @@ G.Hero = {
     var m = (mods && mods[id]) || 1;
     return (m - 1) * 100; // +7 = 버프 1단계
   },
+  // 티어리스트 계산
+  // patch: { mods, prevMods, stats: {id:{picks,wins,bans}}, matches }
+  tierList: function (patch) {
+    var T = G.TIER;
+    var rows = G.HEROES.map(function (h) {
+      var m = (patch.mods && patch.mods[h.id]) || 1;
+      var pm = patch.prevMods ? (patch.prevMods[h.id] || 1) : 1;
+      var st = (patch.stats && patch.stats[h.id]) || { picks: 0, wins: 0, bans: 0 };
+      var prior = (G.HERO_BASE_WR[h.id] || 0.5) + (m - 1) * T.MOD_TO_WR;
+      var est = (st.wins + prior * T.PRIOR_GAMES) / (st.picks + T.PRIOR_GAMES);
+      var n = Math.max(1, patch.matches || 0);
+      var pickRate = patch.matches ? st.picks / n : 0;
+      var banRate = patch.matches ? st.bans / n : 0;
+      return {
+        id: h.id, est: est, wr: st.picks ? st.wins / st.picks : null, picks: st.picks, bans: st.bans,
+        pickRate: pickRate, banRate: banRate, mod: m,
+        change: m > pm + 0.001 ? 'buff' : m < pm - 0.001 ? 'nerf' : null,
+        score: est + Math.min(1, pickRate + banRate) * T.PRESENCE_W
+      };
+    }).sort(function (a, b) { return b.score - a.score; });
+    rows.forEach(function (r, i) {
+      var q = i / rows.length;
+      for (var k = 0; k < T.CUTS.length; k++) if (q < T.CUTS[k][1]) { r.tier = T.CUTS[k][0]; break; }
+    });
+    return rows;
+  },
+
   // 시즌 패치: 일부 영웅 버프/너프
   makePatch: function (mods, rng, heroStats) {
     var cfg = G.CONFIG;

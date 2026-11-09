@@ -208,6 +208,19 @@ G.HEROES = [
     skill: { t: 'rally', p: 0, cd: 10, r: 200, rad: 200, dmg: 0.2, spd: 0.25, dur: 4 },
     ult: { t: 'taunt', p: 2.5, cd: 22, r: 60, rad: 140, dur: 1.8 } }
 ];
+// 기본 패치 기준 영웅 승률 (무작위 전투 3000판 시뮬레이션 결과, tools/sim-test.js 로 재측정 가능)
+// 티어리스트에서 경기 표본이 적을 때 예상치로 쓴다
+G.HERO_BASE_WR = {'ironwall': 0.504,  'golem': 0.445,  'frostguard': 0.466,  'paladin': 0.477,  'berserker': 0.512,  'shadowblade': 0.471,  'galespear': 0.477,  'beast': 0.491,  'thunderfist': 0.524,  'hawkeye': 0.529,  'powder': 0.484,  'rapid': 0.541,  'moonbow': 0.569,  'flame': 0.501,  'icewitch': 0.54,  'stormcaller': 0.529,  'vampire': 0.522,  'healer': 0.512,  'bard': 0.463,  'spirit': 0.502,  'chain': 0.444,  'wardrum': 0.5};
+
+// 티어리스트 설정
+G.TIER = {
+  PRIOR_GAMES: 12,      // 예상 승률을 몇 경기 분량으로 볼지 (표본이 적을수록 예상치 비중 ↑)
+  MOD_TO_WR: 0.8,       // 패치 배율 1%당 예상 승률 0.8%p 변화
+  PRESENCE_W: 0.06,     // 픽+밴률이 티어 점수에 주는 가중치
+  CUTS: [['S', 0.14], ['A', 0.36], ['B', 0.68], ['C', 0.86], ['D', 1.01]], // 순위 비율 기준
+  COLORS: { S: '#ff6b6b', A: '#ffa94d', B: '#ffd43b', C: '#69db7c', D: '#74c0fc' }
+};
+
 G.HERO_BY_ID = {};
 G.HEROES.forEach(function (h) { G.HERO_BY_ID[h.id] = h; });
 

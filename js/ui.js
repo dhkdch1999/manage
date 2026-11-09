@@ -327,7 +327,7 @@
     var notes = st.patchNotes && st.patchNotes.length ? '<p>이번 시즌 패치: ' + st.patchNotes.map(function (n) {
       return '<span class="tag ' + n.type + '">' + G.HERO_BY_ID[n.id].emoji + ' ' + G.HERO_BY_ID[n.id].name + (n.type === 'buff' ? ' ▲' : ' ▼') + '</span>';
     }).join(' ') + '</p>' : '<p class="muted">첫 시즌은 패치가 없습니다. 시즌마다 승률이 높은 영웅은 너프, 낮은 영웅은 버프됩니다.</p>';
-    return '<div class="card"><h2>🦸 영웅 도감 (' + G.HEROES.length + ')</h2>' + notes +
+    return '<div class="card"><div class="row"><h2>🦸 영웅 도감 (' + G.HEROES.length + ')</h2><span class="spacer"></span><button data-act="tier">📊 티어리스트</button></div>' + notes +
       '<p class="muted">상성: 돌진형 ▶ 원거리형 ▶ 탱커형 ▶ 돌진형 (우위 시 피해 +' + Math.round(C.COUNTER_BONUS * 100) + '%)</p>' +
       '<table><tr><th>영웅</th><th>역할</th><th>유형</th><th class="num">체력</th><th class="num">공격</th><th class="num">사거리</th><th class="num">공속</th><th>스킬</th><th>궁극기</th><th>패치</th><th class="num">픽</th><th class="num">승률</th><th class="num">밴</th></tr>' +
       G.HEROES.map(function (h) {
@@ -397,6 +397,37 @@
       '</ol><div class="actions"><button class="primary" data-act="close">시작하기</button></div>');
   }
 
+  // ---------- 티어리스트 ----------
+  function tierModal(idx) {
+    var ps = L.patches();
+    if (idx == null || idx < 0 || idx >= ps.length) idx = ps.length - 1;
+    UI.tierIdx = idx;
+    var pt = ps[idx], rows = G.Hero.tierList(pt);
+    var tabs = ps.map(function (p, i) {
+      return '<button class="small ' + (i === idx ? 'on' : '') + '" data-act="tier-patch" data-i="' + i + '">S' + p.season + ' 패치' + (p.current ? ' (현재)' : '') + '</button>';
+    }).join('');
+    var notes = pt.notes && pt.notes.length ? pt.notes.map(function (n) {
+      return '<span class="tag ' + n.type + '">' + G.HERO_BY_ID[n.id].emoji + ' ' + G.HERO_BY_ID[n.id].name + (n.type === 'buff' ? ' ▲' : ' ▼') + '</span>';
+    }).join(' ') : '<span class="muted">변경 없음 (기본 패치)</span>';
+    var body = G.TIER.CUTS.map(function (c) {
+      var t = c[0], list = rows.filter(function (r) { return r.tier === t; });
+      return '<div class="tier-row"><div class="tier-lbl" style="background:' + G.TIER.COLORS[t] + '">' + t + '</div><div class="tier-heroes">' +
+        list.map(function (r) {
+          var h = G.HERO_BY_ID[r.id];
+          var ch = r.change === 'buff' ? '<span class="green">▲</span>' : r.change === 'nerf' ? '<span class="red">▼</span>' : '';
+          return '<div class="tier-chip" title="' + esc(skillText(h.skill) + ' / 궁: ' + skillText(h.ult)) + '"><span class="em">' + h.emoji + '</span><div>' +
+            '<b>' + esc(h.name) + '</b> ' + ch + '<div class="muted">' + G.ROLES[h.role] + '</div>' +
+            '<div class="tier-num">승 ' + (r.wr != null ? Math.round(r.wr * 100) + '%' : '-') + ' · 픽 ' + Math.round(r.pickRate * 100) + '% · 밴 ' + Math.round(r.banRate * 100) + '%</div></div></div>';
+        }).join('') + (list.length ? '' : '<span class="muted">-</span>') + '</div></div>';
+    }).join('');
+    modal('<div class="row"><h2 style="margin:0">📊 영웅 티어리스트</h2><span class="spacer"></span><button data-act="close">닫기</button></div>' +
+      '<div class="filters" style="margin-top:12px">' + tabs + '</div>' +
+      '<p style="margin:6px 0">패치 노트: ' + notes + '</p>' +
+      '<p class="muted" style="font-size:12px;margin-top:0">표본 ' + pt.matches + '경기 (리그 전체). 승률·픽률·밴률과 패치 변경을 반영한 점수로 등급을 매깁니다. ' +
+      '경기 수가 적을 때는 시뮬레이션 기반 예상 승률의 비중이 커집니다. ▲▼는 직전 패치 대비 버프/너프.</p>' +
+      '<div class="tier-list">' + body + '</div>', true);
+  }
+
   // =====================================================
   // 경기 화면
   // =====================================================
@@ -462,6 +493,7 @@
     var enemyPicks = d.picks[1 - m.side].map(function (p) { return p.heroId; });
     var myPicks = d.picks[m.side].map(function (p) { return p.heroId; });
     var comp = G.Hero.compScore(myPicks, enemyPicks);
+    var tiers = L.currentTiers();
 
     function sideCol(s) {
       var t = L.t(s === 0 ? m.fx.a : m.fx.b);
@@ -490,18 +522,19 @@
       var ms = selP ? Math.round(selP.mastery[h.id] || 0) : null;
       return '<div class="hero ' + (tk ? 'taken' : '') + '" ' + (!tk && mine ? 'data-act="hero" data-h="' + h.id + '"' : '') + ' title="' + esc(skillText(h.skill) + ' / 궁: ' + skillText(h.ult)) + '">' + ctr + patch +
         '<div class="em">' + h.emoji + '</div><div class="nm">' + esc(h.name) + '</div><div class="rl">' + G.ROLES[h.role] + ' · ' + G.ARCH[h.arch] + '</div>' +
-        (ms != null && cur && cur.type === 'pick' ? '<div class="ms" style="color:' + (ms >= 60 ? 'var(--green)' : ms >= 30 ? 'var(--text)' : 'var(--muted)') + '">숙련 ' + ms + '</div>' : '') + '</div>';
+        (ms != null && cur && cur.type === 'pick' ? '<div class="ms" style="color:' + (ms >= 60 ? 'var(--green)' : ms >= 30 ? 'var(--text)' : 'var(--muted)') + '">숙련 ' + ms + '</div>' : '') +
+        '<span class="tier-badge" style="background:' + G.TIER.COLORS[tiers[h.id]] + '">' + tiers[h.id] + '</span></div>';
     }).join('');
 
     var turn = !cur ? '밴픽 완료!' : (mine ? (cur.type === 'ban' ? '🚫 우리 차례 — 밴할 영웅을 고르세요' : '✅ 우리 차례 — ' + (selP ? esc(selP.nick) + '에게 줄 ' : '') + '영웅을 고르세요') : '⏳ 상대가 ' + (cur.type === 'ban' ? '밴' : '픽') + ' 중...');
     return '<div class="main" style="margin:0 auto;max-width:1300px"><div class="row"><h2>🎯 밴픽</h2><span class="muted">전술: ' + C.TACTICS[m.tactic].name + '</span><span class="spacer"></span>' +
       '<span>조합 상성 <b class="' + (comp > 0 ? 'green' : comp < 0 ? 'red' : '') + '">' + (comp > 0 ? '+' : '') + comp + '</b></span>' +
-      '<button data-act="draft-auto">🤖 남은 밴픽 자동</button></div>' +
+      '<button data-act="tier">📊 티어리스트</button><button data-act="draft-auto">🤖 남은 밴픽 자동</button></div>' +
       '<div class="draft">' + sideCol(0) +
       '<div><div class="turn ' + (mine ? 'mine' : 'theirs') + '">' + turn + '</div><div class="filters">' +
       roles.map(function (r) { return '<button class="small ' + (m.filter === r[0] ? 'on' : '') + '" data-act="draft-filter" data-v="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '</div><div class="hero-grid">' + grid + '</div>' +
-      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 숙련도는 선택한 선수 기준 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
+      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 오른쪽 아래 글자는 현재 패치 티어 · 숙련도는 선택한 선수 기준 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
       sideCol(1) + '</div></div>';
   }
 
@@ -794,6 +827,8 @@
       m.stage = 'draft';
       render(); draftTick();
     },
+    'tier': function () { tierModal(); },
+    'tier-patch': function (el) { tierModal(+el.dataset.i); },
     'draft-filter': function (el) { UI.match.filter = el.dataset.v; render(); },
     'slot': function (el) { UI.match.selPlayer = el.dataset.pid; render(); },
     'hero': function (el) {
