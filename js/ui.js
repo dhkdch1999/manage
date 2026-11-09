@@ -14,6 +14,11 @@
   function sv(v, known) { return known ? '<span class="stat-v ' + sCls(v) + '">' + v + '</span>' : '<span class="stat-v s-q">?</span>'; }
   function ovr(p) { return G.Player.overall(p).toFixed(1); }
   function bar(v, col) { return '<div class="bar"><i style="width:' + G.clamp(v, 0, 100) + '%;background:' + (col || 'var(--green)') + '"></i></div>'; }
+  function posTag(pos, small) {
+    if (!pos) return '<span class="muted">후보</span>';
+    return '<span class="pos-chip' + (small ? ' sm' : '') + '" style="background:' + G.POS_COLOR[pos] + '">' + G.POS[pos] + '</span>';
+  }
+  UI.posTag = posTag;
   function heroTag(id) { var h = G.HERO_BY_ID[id]; return h ? h.emoji + ' ' + esc(h.name) : '-'; }
   function teamName(id) { var t = L.t(id); return t ? esc(t.name) : '?'; }
   function toast(msg, ms) {
@@ -136,17 +141,23 @@
   // ---------- 선수단 ----------
   function vSquad() {
     var u = L.user();
-    var ps = u.players.map(L.p).sort(function (a, b) { return G.ROLE_ORDER.indexOf(a.role) - G.ROLE_ORDER.indexOf(b.role); });
+    var ps = u.players.map(L.p).sort(function (a, b) {
+      var ia = u.starters.indexOf(a.id), ib = u.starters.indexOf(b.id);
+      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || G.POS_ORDER.indexOf(a.role) - G.POS_ORDER.indexOf(b.role);
+    });
     return '<div class="card"><div class="row"><h2>👥 선수단 (' + ps.length + '/' + C.ROSTER_MAX + ')</h2><span class="spacer"></span>' +
-      '<span class="muted">선발 ' + u.starters.length + '/5 · 선수를 누르면 상세 정보</span><button class="small" data-act="auto-starters">자동 선발</button></div>' +
-      '<table><tr><th>선발</th><th>닉네임</th><th>역할</th><th class="num">나이</th>' +
+      '<span class="muted">라인업에서 포지션을 고르면 그 자리 선수와 맞바뀝니다 · 주 포지션이 아니면 경기력 -7%</span><button class="small" data-act="auto-starters">자동 라인업</button></div>' +
+      '<table><tr><th>라인업</th><th>닉네임</th><th>주 포지션</th><th class="num">나이</th>' +
       G.STAT_KEYS.map(function (k) { return '<th class="num">' + G.STAT_NAMES[k] + '</th>'; }).join('') +
       '<th class="num">종합</th><th class="num">잠재</th><th>컨디션</th><th class="num">피로</th><th>주력 영웅</th><th class="num">연봉</th><th class="num">계약</th></tr>' +
       ps.map(function (p) {
-        var on = u.starters.indexOf(p.id) >= 0;
+        var slot = L.posOf(u, p.id);
         var pend = G.state.pendingRenewals.indexOf(p.id) >= 0;
-        return '<tr class="click" data-act="player" data-pid="' + p.id + '"><td><button class="small ' + (on ? 'primary' : '') + '" data-act="starter" data-pid="' + p.id + '">' + (on ? '선발' : '후보') + '</button></td>' +
-          '<td><b>' + esc(p.nick) + '</b>' + (pend ? ' <span class="tag warn">재계약</span>' : '') + '</td><td>' + G.ROLES[p.role] + '</td><td class="num">' + p.age + '</td>' +
+        var sel = '<select data-chg="lineup" data-pid="' + p.id + '" class="lineup-sel"' + (slot ? ' style="border-color:' + G.POS_COLOR[slot] + '"' : '') + '><option value="-1"' + (slot ? '' : ' selected') + ' disabled>후보</option>' +
+          G.POS_ORDER.map(function (pos, i) { return '<option value="' + i + '"' + (slot === pos ? ' selected' : '') + '>' + G.POS[pos] + (u.starters[i] && u.starters[i] !== p.id ? ' (' + esc(L.p(u.starters[i]).nick) + '와 교체)' : '') + '</option>'; }).join('') + '</select>';
+        var warn = slot && slot !== p.role ? ' <span class="tag warn" title="주 포지션이 아님">⚠</span>' : '';
+        return '<tr class="click" data-act="player" data-pid="' + p.id + '"><td data-act="noop">' + sel + warn + '</td>' +
+          '<td><b>' + esc(p.nick) + '</b>' + (pend ? ' <span class="tag warn">재계약</span>' : '') + '</td><td>' + posTag(p.role) + '</td><td class="num">' + p.age + '</td>' +
           G.STAT_KEYS.map(function (k) { return '<td class="num">' + sv(p.stats[k], true) + '</td>'; }).join('') +
           '<td class="num"><b>' + ovr(p) + '</b></td><td class="num">' + p.potential + '</td><td>' + bar(p.condition, p.condition < 60 ? 'var(--red)' : '') + '</td>' +
           '<td class="num">' + Math.round(p.fatigue) + '</td><td>' + G.Player.bestHeroes(p, 3).map(function (b) { return G.HERO_BY_ID[b.id].emoji; }).join(' ') + '</td>' +
@@ -160,7 +171,7 @@
     var team = p.teamId ? teamName(p.teamId) : '자유계약';
     var ms = G.HEROES.map(function (h) { return { h: h, m: p.mastery[h.id] || 0 }; }).sort(function (a, b) { return b.m - a.m; }).slice(0, 8);
     var c = p.career, s = p.season;
-    var html = '<h2>' + esc(p.nick) + ' <span class="muted" style="font-size:14px">' + G.ROLES[p.role] + ' · ' + p.age + '세 · ' + team + '</span></h2>' +
+    var html = '<h2>' + esc(p.nick) + ' ' + posTag(p.role) + ' <span class="muted" style="font-size:14px">' + p.age + '세 · ' + team + '</span></h2>' +
       '<div class="grid2"><div><h3>능력치</h3><table>' +
       G.STAT_KEYS.map(function (k) {
         var k2 = known || vis.indexOf(k) >= 0;
@@ -193,10 +204,10 @@
     var opts = [['atk', '공격'], ['def', '방어'], ['phys', '피지컬'], ['iq', '운영'], ['team', '팀워크'], ['hero', '영웅 숙련'], ['rest', '휴식']];
     return '<div class="card"><div class="row"><h2>🏋️ 주간 훈련</h2><span class="spacer"></span><button class="small" data-act="all-rest">전원 휴식</button><button class="small" data-act="all-train">전원 주 능력치 훈련</button></div>' +
       '<p class="muted">훈련은 매주 진행 시 적용됩니다. 훈련하면 피로가 쌓이고, 피로가 높으면 컨디션과 성장 효율이 떨어집니다. 훈련장 Lv.' + st.facility.train + ' (성장 +' + (st.facility.train - 1) * 15 + '%) · 숙소 Lv.' + st.facility.dorm + ' (피로 -' + (st.facility.dorm - 1) * 8 + '%)</p>' +
-      '<table><tr><th>선수</th><th>역할</th><th>훈련</th><th>영웅</th><th>진행도</th><th class="num">피로</th><th>컨디션</th><th class="num">잠재</th></tr>' +
+      '<table><tr><th>선수</th><th>포지션</th><th>훈련</th><th>영웅</th><th>진행도</th><th class="num">피로</th><th>컨디션</th><th class="num">잠재</th></tr>' +
       u.players.map(L.p).map(function (p) {
         var prog = p.train !== 'rest' && p.train !== 'hero' ? (p.progress[p.train] || 0) * 100 : 0;
-        return '<tr><td><b>' + esc(p.nick) + '</b></td><td>' + G.ROLES[p.role] + '</td><td><select data-chg="train" data-pid="' + p.id + '">' +
+        return '<tr><td><b>' + esc(p.nick) + '</b></td><td>' + posTag(p.role) + '</td><td><select data-chg="train" data-pid="' + p.id + '">' +
           opts.map(function (o) { return '<option value="' + o[0] + '"' + (p.train === o[0] ? ' selected' : '') + '>' + o[1] + (G.STAT_NAMES[o[0]] ? ' (' + p.stats[o[0]] + ')' : '') + '</option>'; }).join('') +
           '</select></td><td>' + (p.train === 'hero' ? '<select data-chg="train-hero" data-pid="' + p.id + '">' + G.HEROES.map(function (h) {
             return '<option value="' + h.id + '"' + ((p.trainHero || G.Player.bestHeroes(p, 1)[0].id) === h.id ? ' selected' : '') + '>' + h.emoji + ' ' + h.name + ' (' + Math.round(p.mastery[h.id] || 0) + ')</option>';
@@ -259,8 +270,8 @@
     var html = '<div class="tabs"><button data-act="tab" data-k="market" data-v="fa" class="' + (tab === 'fa' ? 'on' : '') + '">자유계약 (' + st.freeAgents.length + ')</button>' +
       '<button data-act="tab" data-k="market" data-v="teams" class="' + (tab === 'teams' ? 'on' : '') + '">다른 팀 선수' + (L.canBuyFromTeams() ? '' : ' 🔒') + '</button>' +
       '<button data-act="tab" data-k="market" data-v="renew" class="' + (tab === 'renew' ? 'on' : '') + '">재계약 (' + st.pendingRenewals.length + ')</button>' +
-      '<span class="spacer"></span><select data-chg="role-filter"><option value="all">전체 역할</option>' +
-      G.ROLE_ORDER.map(function (r) { return '<option value="' + r + '"' + (rf === r ? ' selected' : '') + '>' + G.ROLES[r] + '</option>'; }).join('') + '</select></div>';
+      '<span class="spacer"></span><select data-chg="role-filter"><option value="all">전체 포지션</option>' +
+      G.POS_ORDER.map(function (r) { return '<option value="' + r + '"' + (rf === r ? ' selected' : '') + '>' + G.POS[r] + '</option>'; }).join('') + '</select></div>';
     var list;
     if (tab === 'fa') list = st.freeAgents.map(L.p);
     else if (tab === 'teams') list = Object.keys(st.teams).map(L.t).filter(function (t) { return !t.user && !t.foreign; })
@@ -270,11 +281,11 @@
       .sort(function (a, b) { return G.Player.value(b) - G.Player.value(a); }).slice(0, 60);
     html += '<div class="card">' + (tab === 'teams' && !L.canBuyFromTeams() ? '<p class="gold">다른 팀 선수 영입은 오프시즌에만 가능합니다. (목록 열람·스카우트는 가능)</p>' : '') +
       (tab === 'fa' ? '<p class="muted">스카우트하지 않은 선수는 능력치 일부와 잠재력이 "?"로 가려집니다.</p>' : '') +
-      '<table><tr><th>닉네임</th><th>팀</th><th>역할</th><th class="num">나이</th>' + G.STAT_KEYS.map(function (k) { return '<th class="num">' + G.STAT_NAMES[k] + '</th>'; }).join('') +
+      '<table><tr><th>닉네임</th><th>팀</th><th>포지션</th><th class="num">나이</th>' + G.STAT_KEYS.map(function (k) { return '<th class="num">' + G.STAT_NAMES[k] + '</th>'; }).join('') +
       '<th class="num">잠재</th><th class="num">' + (tab === 'teams' ? '이적료' : '가치') + '</th><th class="num">희망 연봉</th><th></th></tr>' +
       list.map(function (p) {
         var known = L.isKnown(p.id), vis = L.visibleStats(p.id);
-        return '<tr class="click" data-act="player" data-pid="' + p.id + '"><td><b>' + esc(p.nick) + '</b></td><td class="muted">' + (p.teamId ? teamName(p.teamId) : 'FA') + '</td><td>' + G.ROLES[p.role] + '</td><td class="num">' + p.age + '</td>' +
+        return '<tr class="click" data-act="player" data-pid="' + p.id + '"><td><b>' + esc(p.nick) + '</b></td><td class="muted">' + (p.teamId ? teamName(p.teamId) : 'FA') + '</td><td>' + posTag(p.role) + '</td><td class="num">' + p.age + '</td>' +
           G.STAT_KEYS.map(function (k) { return '<td class="num">' + sv(p.stats[k], known || vis.indexOf(k) >= 0) + '</td>'; }).join('') +
           '<td class="num">' + sv(p.potential, known) + '</td><td class="num">' + (tab === 'teams' ? L.transferFee(p) : G.Player.value(p)).toLocaleString() + '</td><td class="num">~' + L.demand(p) + '</td>' +
           '<td>' + (!known ? '<button class="small" data-act="scout" data-pid="' + p.id + '">🔍</button> ' : '') +
@@ -286,7 +297,7 @@
     var p = L.p(pid), dem = L.demand(p);
     var fee = p.teamId && mode !== 'renew' ? L.transferFee(p) : 0;
     modal('<h2>' + (mode === 'renew' ? '재계약' : '영입') + ' 협상 — ' + esc(p.nick) + '</h2>' +
-      '<p class="muted">' + G.ROLES[p.role] + ' · ' + p.age + '세 · 현재 연봉 ' + p.salary + '만원</p>' +
+      '<p class="muted">' + posTag(p.role) + ' ' + p.age + '세 · 현재 연봉 ' + p.salary + '만원</p>' +
       (fee ? '<p>이적료: <b class="gold">' + money(fee) + '</b> (' + teamName(p.teamId) + ')</p>' : '') +
       '<p>에이전트가 알려준 희망 연봉은 <b>약 ' + dem + '만원</b>입니다. 너무 낮으면 거절당해요.</p>' +
       '<div class="row"><label>연봉(만원/시즌) <input type="number" id="off-sal" value="' + dem + '" step="10" min="50" style="width:110px"></label>' +
@@ -329,10 +340,10 @@
     }).join(' ') + '</p>' : '<p class="muted">첫 시즌은 패치가 없습니다. 시즌마다 승률이 높은 영웅은 너프, 낮은 영웅은 버프됩니다.</p>';
     return '<div class="card"><div class="row"><h2>🦸 영웅 도감 (' + G.HEROES.length + ')</h2><span class="spacer"></span><button data-act="tier">📊 티어리스트</button></div>' + notes +
       '<p class="muted">상성: 돌진형 ▶ 원거리형 ▶ 탱커형 ▶ 돌진형 (우위 시 피해 +' + Math.round(C.COUNTER_BONUS * 100) + '%)</p>' +
-      '<table><tr><th>영웅</th><th>역할</th><th>유형</th><th class="num">체력</th><th class="num">공격</th><th class="num">사거리</th><th class="num">공속</th><th>스킬</th><th>궁극기</th><th>패치</th><th class="num">픽</th><th class="num">승률</th><th class="num">밴</th></tr>' +
+      '<table><tr><th>영웅</th><th>포지션</th><th>클래스</th><th>유형</th><th class="num">체력</th><th class="num">공격</th><th class="num">사거리</th><th class="num">공속</th><th>스킬</th><th>궁극기</th><th>패치</th><th class="num">픽</th><th class="num">승률</th><th class="num">밴</th></tr>' +
       G.HEROES.map(function (h) {
         var s = G.Hero.stats(h.id, st.heroMods), hs = st.heroStats[h.id] || { picks: 0, wins: 0, bans: 0 };
-        return '<tr><td>' + h.emoji + ' <b>' + esc(h.name) + '</b></td><td>' + G.ROLES[h.role] + '</td><td>' + G.ARCH[h.arch] + '</td>' +
+        return '<tr><td>' + h.emoji + ' <b>' + esc(h.name) + '</b></td><td>' + h.pos.map(function (q) { return posTag(q, true); }).join('') + '</td><td>' + G.ROLES[h.role] + '</td><td>' + G.ARCH[h.arch] + '</td>' +
           '<td class="num">' + s.hp + (h.armor ? ' <span class="muted">(방어 ' + Math.round(h.armor * 100) + '%)</span>' : '') + '</td><td class="num">' + Math.round(s.atk) + '</td><td class="num">' + h.range + '</td><td class="num">' + h.as + '</td>' +
           '<td style="white-space:normal;font-size:12px">' + skillText(h.skill) + '</td><td style="white-space:normal;font-size:12px">' + skillText(h.ult) + '</td>' +
           '<td>' + patchTag(h.id) + '</td><td class="num">' + hs.picks + '</td><td class="num">' + (hs.picks ? Math.round(hs.wins / hs.picks * 100) + '%' : '-') + '</td><td class="num">' + hs.bans + '</td></tr>';
@@ -346,37 +357,22 @@
       '<input type="file" id="import-file" accept=".json" style="display:none"><button data-act="import-click">📂 불러오기</button></div>' +
       '<p class="muted">시드: ' + G.state.seed + '</p>' +
       '<div class="row" style="margin-top:20px"><button class="danger" data-act="reset">새 게임 (현재 저장 삭제)</button></div></div>' +
-      '<div class="card"><h2>🧪 밸런스 점검 (디버그)</h2><p class="muted">무작위 영웅·전술로 전투를 100판 자동 실행해 영웅별 승률과 전술별 승률·점수차 편차를 봅니다. 변칙적 전술은 평균 승률은 비슷하되 편차가 가장 커야 정상입니다.</p>' +
+      '<div class="card"><h2>🧪 밸런스 점검 (디버그)</h2><p class="muted">포지션에 맞춘 무작위 영웅·전술로 전투를 100판 자동 실행해 영웅별 승률과 전술별 승률·점수차 편차를 봅니다. 변칙적 전술은 평균 승률은 비슷하되 편차가 가장 커야 정상입니다.</p>' +
       '<button data-act="debug-sim">100판 돌리기</button><div id="debug-out" style="margin-top:12px"></div></div></div>' +
       '<div class="card"><h2>❓ 도움말</h2><button data-act="help">게임 방법 보기</button></div>';
   }
 
   function runDebugSim(n) {
-    var rng = new G.RNG(Date.now() % 1e9);
-    var heroW = {}, tac = {}, plays = { ok: 0, all: 0 };
-    for (var i = 0; i < n; i++) {
-      var ids = rng.shuffle(G.HEROES.map(function (h) { return h.id; }));
-      var sides = [0, 1].map(function (s) {
-        return { name: 'T' + s, color: '#888', tactic: rng.pick(G.STYLES), units: [0, 1, 2, 3, 4].map(function (k) {
-          return { player: G.Player.generate(rng, 'd' + s + k, 11), heroId: ids[s * 5 + k] };
-        }) };
-      });
-      var r = new G.Battle({ seed: rng.int(1, 1e9), sides: sides, heroMods: G.state.heroMods }).runToEnd().result();
-      r.units.forEach(function (u) { var h = heroW[u.heroId] = heroW[u.heroId] || { p: 0, w: 0 }; h.p++; if (u.side === r.winner) h.w++; });
-      [0, 1].forEach(function (s) {
-        var t = r.startTactics[s], x = tac[t] = tac[t] || { p: 0, w: 0, d: [] };
-        x.p++; if (s === r.winner) x.w++; x.d.push(r.score[s] - r.score[1 - s]);
-      });
-      r.plays.forEach(function (pl) { pl.forEach(function (x) { plays.all++; if (x.ok) plays.ok++; }); });
-    }
+    var o = G.Sim.random(n, { mods: G.state.heroMods });
+    var heroW = o.heroW, tac = o.tac, plays = { ok: 0, all: 0 };
+    Object.keys(o.plays).forEach(function (k) { plays.ok += o.plays[k][0]; plays.all += o.plays[k][1]; });
     var hs = Object.keys(heroW).sort(function (a, b) { return heroW[b].w / heroW[b].p - heroW[a].w / heroW[a].p; });
     var out = '<h3>전술</h3><table><tr><th>전술</th><th class="num">경기</th><th class="num">승률</th><th class="num">점수차 편차</th></tr>' +
       G.STYLES.map(function (k) {
         var x = tac[k]; if (!x) return '';
-        var m = x.d.reduce(function (a, b) { return a + b; }, 0) / x.d.length;
-        var sd = Math.sqrt(x.d.reduce(function (a, b) { return a + (b - m) * (b - m); }, 0) / x.d.length);
+        var sd = G.Sim.sd(x.diffs);
         return '<tr><td>' + C.TACTICS[k].name + '</td><td class="num">' + x.p + '</td><td class="num">' + Math.round(x.w / x.p * 100) + '%</td><td class="num">' + sd.toFixed(2) + '</td></tr>';
-      }).join('') + '</table><p class="muted">변칙 플레이 성공률 ' + (plays.all ? Math.round(plays.ok / plays.all * 100) : 0) + '% (' + plays.all + '회)</p>' +
+      }).join('') + '</table><p class="muted">경기당 평균 킬 ' + (o.kills / n).toFixed(1) + ' · 포탑 ' + (o.towers / n).toFixed(1) + ' · 넥서스 파괴로 끝난 경기 ' + Math.round(o.nexus / n * 100) + '%</p><p class="muted">변칙 플레이 성공률 ' + (plays.all ? Math.round(plays.ok / plays.all * 100) : 0) + '% (' + plays.all + '회)</p>' +
       '<h3>영웅 승률</h3><table>' + hs.map(function (id) {
         var w = heroW[id].w / heroW[id].p;
         return '<tr><td>' + heroTag(id) + '</td><td style="width:50%">' + bar(w * 100, w > 0.58 ? 'var(--red)' : w < 0.42 ? 'var(--blue)' : '') + '</td><td class="num">' + Math.round(w * 100) + '% (' + heroW[id].p + ')</td></tr>';
@@ -390,8 +386,10 @@
       '<li><b>한 주</b> = 경기 1번. 홈에서 <b>경기 준비</b>를 누르면 전술 설정 → 밴픽 → 자동 전투가 진행됩니다.</li>' +
       '<li><b>밴픽</b>: 양 팀 2밴 후 1-2-2-2-2-1 순서로 픽. 영웅을 누르면 가장 잘 다루는 선수에게 자동 배정되고, 빈 슬롯을 먼저 누르면 그 선수에게 줍니다. 밴픽이 끝나면 슬롯 두 개를 눌러 선수끼리 영웅을 바꾼 뒤 경기를 시작하세요.</li>' +
       '<li><b>상성</b>: 돌진형 ▶ 원거리형 ▶ 탱커형 ▶ 돌진형. 영웅 카드의 ▲/▼ 표시를 참고하세요.</li>' +
-      '<li><b>전술</b>: 공격적 / 균형 / 수비적 / <b>변칙적</b>. 변칙적은 기습·분산 압박·페이크 후퇴를 시도하며, 같은 상대에게 연속으로 쓰면 간파당합니다. 하프타임에 한 번 바꿀 수 있어요.</li>' +
-      '<li><b>점수</b>: 킬 1점, 중앙 수호자 처치 ' + C.OBJ_POINTS + '점. 90초 후 점수가 높은 팀 승리 (동점이면 서든데스).</li>' +
+      '<li><b>전술</b>: 공격적 / 균형 / 수비적 / <b>변칙적</b>. 변칙적은 기습 갱킹·스플릿 푸시·페이크 후퇴를 시도하며, 같은 상대에게 연속으로 쓰면 간파당합니다. 하프타임에 한 번 바꿀 수 있어요.</li>' +
+      '<li><b>맵</b>: 탑·미드·바텀 3라인과 정글. 라인전 → 갱킹·카운터 정글·로밍 → 드래곤(영구 강화)·바론(푸시 강화) → 포탑·넥서스 순서로 진행됩니다.</li>' +
+      '<li><b>승리</b>: 상대 넥서스를 파괴하면 즉시 승리. 30분(게임 시간)까지 못 끝내면 운영 점수(킬 ' + C.SCORE.kill + ', 포탑 ' + C.SCORE.tower + ', 드래곤 ' + C.SCORE.dragon + ', 바론 ' + C.SCORE.baron + ')로 판정.</li>' +
+      '<li><b>포지션</b>: 탑·정글·미드·원딜·서폿. 선수단에서 라인업을 정하세요. 주 포지션이 아니면 -7%, 그 포지션용이 아닌 영웅이면 -10%.</li>' +
       '<li><b>훈련</b>: 선수별로 능력치·영웅 숙련·휴식을 정하세요. 피로 관리가 중요합니다.</li>' +
       '<li><b>오프시즌</b>: 시즌이 끝나면 나이·은퇴·계약 만료·패치·승강이 처리되고 이적시장이 열립니다.</li>' +
       '</ol><div class="actions"><button class="primary" data-act="close">시작하기</button></div>');
@@ -435,7 +433,7 @@
     var st = G.state, u = L.user();
     var side = fx.a === u.id ? 0 : 1;
     var opp = side === 0 ? fx.b : fx.a;
-    if (u.starters.length < 5) { toast('선발 선수 5명이 필요합니다.'); return; }
+    if (!L.lineupFull(u)) { toast('라인업 5자리를 모두 채워야 합니다.'); return; }
     UI.match = { fx: fx, side: side, opp: opp, stage: 'pre', tactic: st.userPlan.tactic || 'balanced', filter: 'all', speed: st.speed || 1 };
     render();
   }
@@ -453,20 +451,20 @@
     var m = UI.match, st = G.state, u = L.user(), ot = L.t(m.opp);
     var rc = G.Tactics.readCount(st.trickMemory, u.id, m.opp);
     var orders = st.userPlan.orders;
-    var focusOpts = [['auto', '자동 (역할별)'], ['carry', '딜러 우선'], ['lowest', '체력 낮은 적'], ['nearest', '가장 가까운 적'], ['support', '서포터 우선']];
+    var focusOpts = [['auto', '자동 (역할별)'], ['carry', '원딜·미드 우선'], ['lowest', '체력 낮은 적'], ['nearest', '가장 가까운 적'], ['support', '서폿 우선']];
     var entryOpts = [['now', '즉시 진입'], ['together', '아군과 함께'], ['late', '늦게 (후속 진입)']];
-    var oppPs = ot.starters.map(L.p);
+    var oppPs = L.sidePlayers(m.opp);
     return '<div class="main" style="margin:0 auto"><div class="row"><h2>⚔️ 경기 준비 — ' + L.stageName(m.fx.stage) + '</h2><span class="spacer"></span><button data-act="back-home">← 홈으로</button></div>' +
       '<div class="grid2"><div class="card"><h3>상대: <span style="color:' + ot.color + '">' + esc(ot.name) + '</span></h3>' +
       '<p class="muted">전력 ' + L.strength(m.opp).toFixed(1) + ' (우리 ' + L.strength(u.id).toFixed(1) + ') · 주 전술 ' + C.TACTICS[ot.style].name + '</p>' +
-      '<table><tr><th>선수</th><th>역할</th><th class="num">종합</th><th>주력 영웅</th></tr>' + oppPs.map(function (p) {
+      '<table><tr><th>포지션</th><th>선수</th><th class="num">종합</th><th>주력 영웅</th></tr>' + oppPs.map(function (p, i) {
         var known = L.isKnown(p.id);
-        return '<tr><td>' + esc(p.nick) + '</td><td>' + G.ROLES[p.role] + '</td><td class="num">' + (known ? ovr(p) : '?') + '</td><td>' + (known ? G.Player.bestHeroes(p, 3).map(function (b) { return G.HERO_BY_ID[b.id].emoji; }).join(' ') : '<span class="muted">스카우트 필요</span>') + '</td></tr>';
+        return '<tr><td>' + posTag(G.POS_ORDER[i]) + '</td><td>' + esc(p.nick) + '</td><td class="num">' + (known ? ovr(p) : '?') + '</td><td>' + (known ? G.Player.bestHeroes(p, 3).map(function (b) { return G.HERO_BY_ID[b.id].emoji; }).join(' ') : '<span class="muted">스카우트 필요</span>') + '</td></tr>';
       }).join('') + '</table></div>' +
-      '<div class="card"><h3>선수별 지시</h3><table><tr><th>선수</th><th>집중 대상</th><th>진입 타이밍</th></tr>' +
-      u.starters.map(L.p).map(function (p) {
+      '<div class="card"><h3>선수별 지시</h3><table><tr><th>포지션</th><th>선수</th><th>집중 대상</th><th>교전 합류</th></tr>' +
+      u.starters.map(L.p).map(function (p, i) {
         var o = orders[p.id] || { focus: 'auto', entry: 'now' };
-        return '<tr><td><b>' + esc(p.nick) + '</b> <span class="muted">' + G.ROLES[p.role] + '</span></td>' +
+        return '<tr><td>' + posTag(G.POS_ORDER[i]) + '</td><td><b>' + esc(p.nick) + '</b>' + (p.role !== G.POS_ORDER[i] ? ' <span class="tag warn" title="주 포지션이 아님">⚠</span>' : '') + '</td>' +
           '<td><select data-chg="order" data-pid="' + p.id + '" data-k="focus">' + focusOpts.map(function (x) { return '<option value="' + x[0] + '"' + (o.focus === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select></td>' +
           '<td><select data-chg="order" data-pid="' + p.id + '" data-k="entry">' + entryOpts.map(function (x) { return '<option value="' + x[0] + '"' + (o.entry === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select></td></tr>';
       }).join('') + '</table></div></div>' +
@@ -501,39 +499,43 @@
       var t = L.t(s === 0 ? m.fx.a : m.fx.b);
       var isMe = s === m.side;
       var picks = d.picks[s];
-      var slots = isMe ? d.players[s].map(function (p) {
+      // 양 팀 모두 포지션 순서(탑·정글·미드·원딜·서폿)로 슬롯 표시
+      var slots = d.players[s].map(function (p, i) {
+        var pos = G.POS_ORDER[i];
         var pk = picks.filter(function (x) { return x.playerId === p.id; })[0];
-        var sel = !pk && m.selPlayer === p.id && mine && cur.type === 'pick';
-        var sw = pk && m.swapSel === p.id;
-        var act = pk ? 'data-act="swap" data-pid="' + p.id + '" title="다른 선수와 영웅 바꾸기"' : 'data-act="slot" data-pid="' + p.id + '" title="이 선수에게 다음 픽 배정"';
-        return '<div class="slot ' + (sel ? 'sel' : '') + (sw ? ' swap' : '') + '" ' + act + ' style="cursor:pointer"><span class="em">' + (pk ? G.HERO_BY_ID[pk.heroId].emoji : '·') + '</span><div><b>' + esc(p.nick) + '</b><div class="muted" style="font-size:11px">' + G.ROLES[p.role] + (pk ? ' · ' + G.HERO_BY_ID[pk.heroId].name + ' (' + Math.round(p.mastery[pk.heroId] || 0) + ')' : '') + '</div></div></div>';
-      }).join('') : [0, 1, 2, 3, 4].map(function (i) {
-        var pk = picks[i];
-        return '<div class="slot"><span class="em">' + (pk ? G.HERO_BY_ID[pk.heroId].emoji : '·') + '</span><div>' + (pk ? '<b>' + esc(L.p(pk.playerId).nick) + '</b><div class="muted" style="font-size:11px">' + G.HERO_BY_ID[pk.heroId].name + '</div>' : '<span class="muted">대기</span>') + '</div></div>';
+        var h = pk ? G.HERO_BY_ID[pk.heroId] : null;
+        var off = h && h.pos.indexOf(pos) < 0;
+        var sel = isMe && !pk && m.selPlayer === p.id && mine && cur.type === 'pick';
+        var sw = isMe && pk && m.swapSel === p.id;
+        var act = !isMe ? '' : pk ? 'data-act="swap" data-pid="' + p.id + '" title="다른 선수와 영웅 바꾸기" style="cursor:pointer"' : 'data-act="slot" data-pid="' + p.id + '" title="이 선수에게 다음 픽 배정" style="cursor:pointer"';
+        return '<div class="slot ' + (sel ? 'sel' : '') + (sw ? ' swap' : '') + '" ' + act + '>' + posTag(pos, true) +
+          '<span class="em">' + (h ? h.emoji : '·') + '</span><div style="min-width:0"><b>' + esc(p.nick) + '</b>' +
+          '<div class="muted" style="font-size:11px">' + (h ? esc(h.name) + (isMe || L.isKnown(p.id) ? ' (' + Math.round(p.mastery[h.id] || 0) + ')' : '') : '대기') +
+          (off ? ' <span class="red" title="이 포지션용 영웅이 아님 (경기력 -10%)">⚠ 포지션 외</span>' : '') + '</div></div></div>';
       }).join('');
       return '<div class="draft-side ' + (s === 0 ? 'blue' : 'red') + (isMe ? ' mine' : '') + '"><h3>' + esc(t.name) + (isMe ? ' (우리)' : '') + '</h3>' +
         '<div class="bans">' + [0, 1].map(function (i) { var b = d.bans[s][i]; return '<div class="ban">' + (b ? G.HERO_BY_ID[b].emoji : '') + '</div>'; }).join('') + '</div>' + slots + '</div>';
     }
 
-    var roles = [['all', '전체']].concat(G.ROLE_ORDER.map(function (r) { return [r, G.ROLES[r]]; }));
-    var grid = G.HEROES.filter(function (h) { return m.filter === 'all' || h.role === m.filter; }).map(function (h) {
+    var roles = [['all', '전체']].concat(G.POS_ORDER.map(function (r) { return [r, G.POS[r]]; }));
+    var grid = G.HEROES.filter(function (h) { return m.filter === 'all' || h.pos.indexOf(m.filter) >= 0; }).map(function (h) {
       var tk = taken[h.id];
       var ctr = '';
       if (enemyPicks.some(function (e) { return G.Hero.beats(h.id, e); })) ctr = '<span class="ctr green">▲</span>';
       else if (enemyPicks.some(function (e) { return G.Hero.beats(e, h.id); })) ctr = '<span class="ctr red">▼</span>';
       var mod = G.state.heroMods[h.id] || 1;
       var patch = mod > 1.001 ? '<span class="patch green">↑</span>' : mod < 0.999 ? '<span class="patch red">↓</span>' : '';
-      var msP = selP || (free.length ? free.slice().sort(function (a, b) { return G.Draft.fit(b, h.id) - G.Draft.fit(a, h.id); })[0] : null);
+      var msP = selP || (free.length ? free.slice().sort(function (a, b) { return G.Draft.fit(b, h.id, d.pos[m.side][b.id]) - G.Draft.fit(a, h.id, d.pos[m.side][a.id]); })[0] : null);
       var ms = msP ? Math.round(msP.mastery[h.id] || 0) : null;
-      return '<div class="hero ' + (tk ? 'taken' : '') + '" ' + (!tk && mine ? 'data-act="hero" data-h="' + h.id + '"' : '') + ' title="' + esc(skillText(h.skill) + ' / 궁: ' + skillText(h.ult)) + '">' + ctr + patch +
-        '<div class="em">' + h.emoji + '</div><div class="nm">' + esc(h.name) + '</div><div class="rl">' + G.ROLES[h.role] + ' · ' + G.ARCH[h.arch] + '</div>' +
+      return '<div class="hero ' + (tk ? 'taken' : '') + '" ' + (!tk && mine ? 'data-act="hero" data-h="' + h.id + '"' : '') + ' title="' + esc(G.ROLES[h.role] + ' · ' + G.ARCH[h.arch] + '\n' + skillText(h.skill) + '\n궁: ' + skillText(h.ult)) + '">' + ctr + patch +
+        '<div class="em">' + h.emoji + '</div><div class="nm">' + esc(h.name) + '</div><div class="rl">' + h.pos.map(function (q) { return posTag(q, true); }).join('') + '</div>' +
         (ms != null && cur && cur.type === 'pick' ? '<div class="ms" style="color:' + (ms >= 60 ? 'var(--green)' : ms >= 30 ? 'var(--text)' : 'var(--muted)') + '">숙련 ' + ms + (selP ? '' : ' · ' + esc(msP.nick)) + '</div>' : '') +
         '<span class="tier-badge" style="background:' + G.TIER.COLORS[tiers[h.id]] + '">' + tiers[h.id] + '</span></div>';
     }).join('');
 
     var turn = done ? '✅ 밴픽 완료 — 우리 선수 슬롯 두 개를 차례로 누르면 영웅을 맞바꿀 수 있어요' :
       (mine ? (cur.type === 'ban' ? '🚫 우리 차례 — 밴할 영웅을 고르세요' :
-        '✅ 우리 차례 — ' + (selP ? esc(selP.nick) + '에게 줄 영웅을 고르세요' : '영웅을 고르세요 (가장 잘 다루는 선수에게 자동 배정)')) :
+        '✅ 우리 차례 — ' + (selP ? esc(selP.nick) + '에게 줄 영웅을 고르세요' : '영웅을 고르세요 (그 영웅에 맞는 포지션 선수에게 자동 배정)')) :
         '⏳ 상대가 ' + (cur.type === 'ban' ? '밴' : '픽') + ' 중...');
     if (m.swapSel) turn = '🔁 ' + esc(L.p(m.swapSel).nick) + ' 선택됨 — 영웅을 바꿀 다른 선수를 누르세요 (같은 선수를 다시 누르면 취소)';
     return '<div class="main" style="margin:0 auto;max-width:1300px"><div class="row"><h2>🎯 밴픽</h2><span class="muted">전술: ' + C.TACTICS[m.tactic].name + '</span><span class="spacer"></span>' +
@@ -543,7 +545,7 @@
       '<div><div class="turn ' + (mine || done || m.swapSel ? 'mine' : 'theirs') + '">' + turn + '</div><div class="filters">' +
       roles.map(function (r) { return '<button class="small ' + (m.filter === r[0] ? 'on' : '') + '" data-act="draft-filter" data-v="' + r[0] + '">' + r[1] + '</button>'; }).join('') +
       '</div><div class="hero-grid">' + grid + '</div>' +
-      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 오른쪽 아래 글자는 현재 패치 티어 · 숙련도는 선택한 선수(없으면 가장 잘 다루는 선수) 기준 · 빈 슬롯을 누르면 다음 픽을 그 선수에게 배정 · 채워진 슬롯 두 개를 누르면 영웅 스왑 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
+      '<p class="muted" style="font-size:12px">▲ 상대 픽에 상성 우위 · ▼ 상성 열세 · ↑↓ 패치 버프/너프 · 오른쪽 아래 글자는 현재 패치 티어 · 영웅 카드의 색 글자는 갈 수 있는 포지션 · 숙련도는 선택한 선수(없으면 가장 잘 맞는 선수) 기준 · 빈 슬롯을 누르면 다음 픽을 그 선수에게 배정 · 채워진 슬롯 두 개를 누르면 영웅 스왑 · 카드에 마우스를 올리면 스킬 설명</p></div>' +
       sideCol(1) + '</div></div>';
   }
 
@@ -579,15 +581,20 @@
 
   function vBattle() {
     var m = UI.match, b = m.battle;
-    return '<div class="main" style="margin:0 auto;max-width:1300px">' +
-      '<div class="scoreboard"><div class="l"><div class="team-big blue">' + esc(b.sides[0].name) + '</div><div class="muted" id="tac0"></div></div>' +
-      '<div><div class="sc" id="sc">0 : 0</div><div class="tm" id="tm">0:00</div></div>' +
-      '<div class="r"><div class="team-big red">' + esc(b.sides[1].name) + '</div><div class="muted" id="tac1"></div></div></div>' +
-      '<div class="battle-wrap"><div><canvas id="arena" width="' + C.MAP_W + '" height="' + C.MAP_H + '"></canvas>' +
-      '<div class="row" style="margin-top:10px">' + [1, 2, 4].map(function (s) { return '<button class="small ' + (m.speed === s ? 'primary' : '') + '" data-act="speed" data-s="' + s + '">' + s + 'x</button>'; }).join('') +
-      '<button class="small" data-act="pause">⏸ 일시정지</button><span class="spacer"></span><button class="small" data-act="skip-battle">⏭ 결과로 건너뛰기</button></div>' +
-      '<div class="units-mini" id="units"></div></div>' +
-      '<div class="card" style="padding:10px"><h3>경기 로그</h3><div class="log" id="log"></div></div></div></div>';
+    function head(si) {
+      return '<div class="sb-team ' + (si === 0 ? 'l' : 'r') + '"><div class="sb-name" style="color:' + (si === 0 ? 'var(--blue)' : 'var(--red)') + '">' + esc(b.sides[si].name) + '</div>' +
+        '<div class="sb-sub" id="tac' + si + '"></div></div>';
+    }
+    return '<div class="match-wrap">' +
+      '<div class="scoreboard2">' + head(0) +
+      '<div class="sb-mid"><div class="sb-obj" id="obj0"></div><div class="sb-k blue" id="k0">0</div><div class="sb-time"><div id="tm">0:00</div><div class="muted" id="ph"></div></div><div class="sb-k red" id="k1">0</div><div class="sb-obj" id="obj1"></div></div>' +
+      head(1) + '</div>' +
+      '<div class="arena-wrap"><div class="team-col" id="col0"></div>' +
+      '<div class="map-col"><canvas id="arena" width="' + G.MAP.W + '" height="' + G.MAP.H + '"></canvas>' +
+      '<div class="row" style="margin-top:8px;justify-content:center">' + [1, 2, 4, 8].map(function (s) { return '<button class="small ' + (m.speed === s ? 'primary' : '') + '" data-act="speed" data-s="' + s + '">' + s + 'x</button>'; }).join('') +
+      '<button class="small" data-act="pause">' + (m.paused ? '▶ 재개' : '⏸ 일시정지') + '</button><button class="small" data-act="skip-battle">⏭ 결과로 건너뛰기</button></div></div>' +
+      '<div class="team-col" id="col1"></div></div>' +
+      '<div class="card log-card"><div class="log" id="log"></div></div></div>';
   }
 
   function afterMatchRender() {
@@ -622,14 +629,17 @@
 
   function updateHud() {
     var m = UI.match, b = m.battle;
-    var el = document.getElementById('sc'); if (!el) return;
-    el.textContent = b.score[0] + ' : ' + b.score[1];
-    var t = Math.min(b.time, C.MATCH_TIME), mm = Math.floor(t / 60), ss = Math.floor(t % 60);
-    document.getElementById('tm').textContent = (b.overtime ? '연장 ' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss + (b.time < C.HALF_TIME ? ' · 전반' : ' · 후반');
+    var el = document.getElementById('k0'); if (!el) return;
+    el.textContent = b.score[0]; document.getElementById('k1').textContent = b.score[1];
+    document.getElementById('tm').textContent = b.clock();
+    var ph = b.phase();
+    document.getElementById('ph').textContent = (b.time < C.HALF_TIME ? '전반 · ' : '후반 · ') + (ph === 'lane' ? '라인전' : ph === 'mid' ? '중반 운영' : '후반 한타');
     [0, 1].forEach(function (s) {
       var S = b.sides[s];
       var ok = S.plays.filter(function (p) { return p.ok; }).length;
-      document.getElementById('tac' + s).textContent = '전술: ' + C.TACTICS[S.tactic].name + (S.plays.length ? ' · 🎭 ' + ok + '/' + S.plays.length : '') + (S.objBuff > 0 ? ' · 🐉 강화' : '');
+      document.getElementById('obj' + s).innerHTML = '🗼' + S.towers + ' 🐉' + S.dragons + ' 👾' + S.barons + (S.baronT > 0 ? ' <span class="gold">바론 버프</span>' : '');
+      document.getElementById('tac' + s).textContent = '전술: ' + C.TACTICS[S.tactic].name + (S.plays.length ? ' · 🎭 ' + ok + '/' + S.plays.length : '') +
+        (S.call ? ' · 📣 ' + (S.call.type === 'obj' ? S.call.target.name : G.MAP.LANE_NAMES[S.call.lane] + ' 푸시') : '');
     });
     var log = document.getElementById('log');
     if (b.events.length !== m.logLen) {
@@ -637,19 +647,25 @@
         var e = b.events[i];
         var d = document.createElement('div');
         d.className = (e.side >= 0 ? 's' + e.side + ' ' : '') + e.cls;
-        d.textContent = Math.floor(e.t) + 's ' + e.text;
+        d.textContent = b.clock(e.t) + '  ' + e.text;
         log.insertBefore(d, log.firstChild);
       }
       m.logLen = b.events.length;
     }
-    var um = document.getElementById('units');
-    um.innerHTML = [0, 1].map(function (s) {
-      return '<div>' + b.units.filter(function (u) { return u.side === s; }).map(function (u) {
-        return '<div class="um ' + (u.alive ? '' : 'dead') + '"><span class="em">' + u.hero.emoji + '</span><span style="width:70px;overflow:hidden">' + esc(u.name) + '</span>' +
-          '<span style="flex:1">' + bar(u.alive ? u.hp / u.maxhp * 100 : 0, s === 0 ? 'var(--blue)' : 'var(--red)') + '</span><span class="muted">' + u.st.k + '/' + u.st.d + '/' + u.st.a + '</span>' +
-          (u.alive ? '' : '<span class="muted">' + Math.ceil(u.respawnT) + 's</span>') + '</div>';
-      }).join('') + '</div>';
-    }).join('');
+    // 선수 카드는 몇 프레임에 한 번만 갱신
+    m.cardTick = (m.cardTick || 0) + 1;
+    if (m.cardTick % 4 !== 1 && !b.ended) return;
+    [0, 1].forEach(function (s) {
+      document.getElementById('col' + s).innerHTML = b.units.filter(function (u) { return u.side === s; }).map(function (u) {
+        var hp = u.alive ? u.hp / u.maxhp * 100 : 0;
+        var task = !u.alive ? '<span class="red">부활 ' + Math.ceil(u.respawnT) + 's</span>' : u.mode === 'retreat' ? '귀환' : u.mode === 'flank' ? '<span class="gold">기습</span>' :
+          u.combatT > 0 ? '<span class="red">교전</span>' : u.task ? ({ lane: '라인', push: '푸시', obj: '오브젝트', camp: '정글', invade: '카정', gank: '갱킹', follow: '동행', join: '합류', split: '스플릿' }[u.task.type] || '') : '';
+        return '<div class="pcard ' + (s === 0 ? 'blue' : 'red') + (u.alive ? '' : ' dead') + '">' +
+          '<div class="pc-top">' + posTag(u.pos, true) + '<span class="pc-em">' + u.hero.emoji + '</span><div class="pc-nm"><b>' + esc(u.name) + '</b><div class="muted">' + esc(u.hero.name) + (u.offHero || u.offRole ? ' <span class="red">⚠</span>' : '') + '</div></div><span class="pc-lv">Lv' + u.lvl + '</span></div>' +
+          bar(hp, s === 0 ? 'var(--blue)' : 'var(--red)') +
+          '<div class="pc-bot"><span>' + u.st.k + '/' + u.st.d + '/' + u.st.a + '</span><span class="muted">CS ' + Math.round(u.farm * 2) + '</span><span class="muted">' + task + '</span></div></div>';
+      }).join('');
+    });
   }
 
   function halftimeModal() {
@@ -699,24 +715,29 @@
     var m = UI.match, r = m.result, b = m.battle;
     var win = r.winner === m.side;
     function teamTable(s) {
-      return '<table><tr><th>선수</th><th>영웅</th><th class="num">K</th><th class="num">D</th><th class="num">A</th><th class="num">피해</th><th class="num">받은 피해</th><th class="num">회복</th></tr>' +
+      return '<table><tr><th>포지션</th><th>선수</th><th>영웅</th><th class="num">Lv</th><th class="num">CS</th><th class="num">K/D/A</th><th class="num">피해</th><th class="num">받은 피해</th><th class="num">회복</th><th class="num">건물·오브젝트</th></tr>' +
         r.units.filter(function (u) { return u.side === s; }).map(function (u) {
           var mvp = r.mvp && r.mvp.playerId === u.playerId;
-          return '<tr><td>' + (mvp ? '⭐ ' : '') + '<b>' + esc(u.name) + '</b></td><td>' + heroTag(u.heroId) + '</td><td class="num">' + u.k + '</td><td class="num">' + u.d + '</td><td class="num">' + u.a + '</td>' +
-            '<td class="num">' + u.dmg.toLocaleString() + '</td><td class="num">' + u.taken.toLocaleString() + '</td><td class="num">' + u.heal.toLocaleString() + '</td></tr>';
+          return '<tr><td>' + posTag(u.pos, true) + '</td><td>' + (mvp ? '⭐ ' : '') + '<b>' + esc(u.name) + '</b></td><td>' + heroTag(u.heroId) + '</td><td class="num">' + u.lvl + '</td><td class="num">' + u.farm + '</td>' +
+            '<td class="num">' + u.k + '/' + u.d + '/' + u.a + '</td><td class="num">' + u.dmg.toLocaleString() + '</td><td class="num">' + u.taken.toLocaleString() + '</td><td class="num">' + u.heal.toLocaleString() + '</td><td class="num">' + u.struct.toLocaleString() + '</td></tr>';
         }).join('') + '</table>';
     }
     function tricks(s) {
       var p = r.plays[s];
       if (!p.length) return '<span class="muted">변칙 플레이 없음</span>';
-      var names = { ambush: '기습', split: '분산 압박', fake: '페이크 후퇴' };
+      var names = { ambush: '기습 갱킹', split: '스플릿 푸시', fake: '페이크 후퇴' };
       var ok = p.filter(function (x) { return x.ok; }).length;
       return '🎭 전술 성공 <b class="green">' + ok + '</b> / 실패 <b class="red">' + (p.length - ok) + '</b> — ' + p.map(function (x) { return names[x.type] + (x.ok ? '✅' : '❌'); }).join(' ');
     }
-    return '<div class="main" style="margin:0 auto;max-width:1100px"><div class="card" style="text-align:center">' +
+    function statRow(label, a, c) { return '<tr><td class="num ' + (a > c ? 'gold' : '') + '">' + a + '</td><td style="text-align:center" class="muted">' + label + '</td><td class="' + (c > a ? 'gold' : '') + '">' + c + '</td></tr>'; }
+    var cs = [0, 1].map(function (s) { return r.units.filter(function (u) { return u.side === s; }).reduce(function (t, u) { return t + u.farm; }, 0); });
+    return '<div class="main" style="margin:0 auto;max-width:1150px"><div class="card" style="text-align:center">' +
       '<div style="font-size:40px;font-weight:900" class="' + (win ? 'gold' : 'red') + '">' + (win ? '🏆 승리!' : '패배') + '</div>' +
-      '<div class="sc" style="font-size:30px;font-weight:900">' + esc(b.sides[0].name) + ' <span class="blue">' + r.score[0] + '</span> : <span class="red">' + r.score[1] + '</span> ' + esc(b.sides[1].name) + '</div>' +
-      '<p class="muted">' + L.stageName(m.fx.stage) + ' · 경기 시간 ' + Math.floor(r.time) + '초 · 수호자 ' + r.obj[0] + ' : ' + r.obj[1] + (r.mvp ? ' · MVP ⭐ ' + esc(r.mvp.name) + ' (' + G.HERO_BY_ID[r.mvp.heroId].name + ')' : '') + '</p></div>' +
+      '<div style="font-size:28px;font-weight:900">' + esc(b.sides[0].name) + ' <span class="blue">' + r.score[0] + '</span> : <span class="red">' + r.score[1] + '</span> ' + esc(b.sides[1].name) + '</div>' +
+      '<p class="muted">' + L.stageName(m.fx.stage) + ' · ' + (r.endBy === 'nexus' ? '넥서스 파괴' : '시간 판정 (운영 점수 ' + r.points[0] + ' : ' + r.points[1] + ')') + ' · 경기 시간 ' + r.clock +
+      (r.mvp ? ' · MVP ⭐ ' + esc(r.mvp.name) + ' (' + G.HERO_BY_ID[r.mvp.heroId].name + ')' : '') + '</p>' +
+      '<table class="cmp">' + statRow('킬', r.score[0], r.score[1]) + statRow('포탑', r.towers[0], r.towers[1]) + statRow('드래곤', r.dragons[0], r.dragons[1]) +
+      statRow('바론', r.barons[0], r.barons[1]) + statRow('CS', cs[0], cs[1]) + '</table></div>' +
       [0, 1].map(function (s) {
         return '<div class="card"><h3 class="' + (s === 0 ? 'blue' : 'red') + '">' + esc(b.sides[s].name) + ' — 전술 ' + C.TACTICS[r.startTactics[s]].name + (r.tactics[s] !== r.startTactics[s] ? ' → ' + C.TACTICS[r.tactics[s]].name : '') + '</h3>' + teamTable(s) + '<p style="margin-bottom:0">' + tricks(s) + '</p></div>';
       }).join('') +
@@ -775,7 +796,7 @@
     'prep': function () { var fx = L.userFixture(); if (fx) startMatch(fx); },
     'auto-match': function () {
       var fx = L.userFixture(); if (!fx) return;
-      if (L.user().starters.length < 5) { toast('선발 선수 5명이 필요합니다.'); return; }
+      if (!L.lineupFull(L.user())) { toast('라인업 5자리를 모두 채워야 합니다.'); return; }
       var rec = L.simFixture(fx);
       var uid = L.user().id, win = rec.winner === uid;
       var sc = fx.a === uid ? rec.score : [rec.score[1], rec.score[0]];
@@ -784,19 +805,12 @@
       toast((win ? '🏆 승리 ' : '패배 ') + sc[0] + ' : ' + sc[1] + ' vs ' + teamName(fx.a === uid ? fx.b : fx.a), 3500);
     },
     // 선수단
-    'starter': function (el, e) {
-      e.stopPropagation();
-      var u = L.user(), pid = el.dataset.pid, i = u.starters.indexOf(pid);
-      if (i >= 0) u.starters.splice(i, 1);
-      else { if (u.starters.length >= 5) { toast('선발은 5명까지입니다. 먼저 한 명을 후보로 내리세요.'); return; } u.starters.push(pid); }
-      save(); render();
-    },
+    'noop': function () {},
     'auto-starters': function () { L.autoStarters(L.user()); save(); render(); },
     'player': function (el) { playerModal(el.dataset.pid); },
     'all-rest': function () { L.user().players.forEach(function (id) { L.p(id).train = 'rest'; }); save(); render(); },
     'all-train': function () {
-      var mp = { tank: 'def', fighter: 'atk', mage: 'atk', marksman: 'phys', support: 'team' };
-      L.user().players.forEach(function (id) { var p = L.p(id); p.train = mp[p.role]; }); save(); render();
+      L.user().players.forEach(function (id) { var p = L.p(id); p.train = G.POS_STAT[p.role] || 'atk'; }); save(); render();
     },
     // 이적시장
     'scout': function (el, e) {
@@ -894,6 +908,7 @@
   modalRoot.addEventListener('click', onClick);
 
   var CHG = {
+    'lineup': function (el) { var u = L.user(); L.setPosition(u, el.dataset.pid, +el.value); save(); render(); },
     'train': function (el) { var p = L.p(el.dataset.pid); p.train = el.value; save(); render(); },
     'train-hero': function (el) { L.p(el.dataset.pid).trainHero = el.value; save(); },
     'role-filter': function (el) { UI.roleFilter = el.value; render(); },

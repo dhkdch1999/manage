@@ -31,24 +31,45 @@ G.clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
 
 // ---------- 밸런스 설정 ----------
 G.CONFIG = {
-  // 전투
+  // 전투 (시간 단위: 시뮬레이션 초. 화면에는 TIME_SCALE 배로 표시 → 240초 = 30:00)
   TICK: 0.1,               // 초당 10틱
-  MATCH_TIME: 90,          // 경기 시간(초)
-  HALF_TIME: 45,           // 하프타임
-  OT_TIME: 20,             // 연장(서든데스)
-  MAP_W: 800,
-  MAP_H: 480,
-  RESPAWN_BASE: 5,
-  RESPAWN_GROW: 0.06,      // 경기 시간 1초당 부활 시간 증가
-  BASE_REGEN: 0.14,        // 진영에서 초당 회복 (최대 체력 비율)
-  OBJ_HP: 2600,
-  OBJ_SPAWN: 15,           // 목표물 첫 등장(초)
-  OBJ_RESPAWN: 30,
-  OBJ_POINTS: 3,           // 목표물 처치 점수
-  OBJ_BUFF_TIME: 18,
-  OBJ_BUFF_DMG: 0.2,
+  MATCH_TIME: 240,         // 경기 제한 시간 — 넥서스가 안 깨지면 점수로 승부
+  HALF_TIME: 120,          // 하프타임
+  TIME_SCALE: 7.5,
+  LANING_END: 70,          // 라인전 단계 종료
+  LATE_START: 150,         // 후반 (5인 그룹 운영)
+  RESPAWN_BASE: 7,
+  RESPAWN_GROW: 0.09,      // 경기 시간 1초당 부활 시간 증가
+  BASE_REGEN: 0.15,        // 우물에서 초당 회복 (최대 체력 비율)
   COUNTER_BONUS: 0.12,     // 상성 우위 피해 보너스
-  ASSIST_WINDOW: 5,
+  ASSIST_WINDOW: 6,
+  ENGAGE_RANGE: 150,       // 사거리 + 이 거리 안의 적 챔피언과 교전
+
+  // 성장 (CS·레벨)
+  FARM_LANE: 1.0,          // 라인에 있을 때 초당 성장치
+  FARM_CAMP: 10,           // 정글 캠프 처치
+  FARM_KILL: 8, FARM_ASSIST: 3, FARM_TOWER: 5,
+  FARM_PER_LEVEL: 6.5,
+  MAX_LEVEL: 18,
+  LVL_HP: 0.045,           // 레벨당 체력 +4.5%
+  LVL_ATK: 0.04,           // 레벨당 공격력 +4%
+
+  // 라인 · 포탑
+  PUSH_PER_UNIT: 0.008,    // 라인에 아군이 1명 더 많을 때 초당 라인 전진(경로 비율)
+  TOWER_RANGE: 165,
+  TOWER_HP: { outer: 1000, inner: 1300 },
+  NEXUS_HP: 1800,
+  TOWER_DMG: 70, TOWER_DMG_GROW: 1.1,  // 기본 + 경기 시간 1초당 증가
+  TOWER_AS: 1.0,
+  MINION_TOWER_DPS: 22,    // 미니언이 포탑에 주는 초당 피해
+  STRUCT_DMG: 1.0,         // 챔피언이 건물에 주는 피해 배수
+
+  // 정글 · 오브젝트
+  CAMP_HP: 500, CAMP_RESPAWN: 35,
+  GANK_THRESHOLD: 2.3,
+  DRAGON: { spawn: 50, respawn: 50, hp: 1500, hpGrow: 6, dps: 10, buff: 0.1 },          // 처치 팀 영구 피해 +10%/스택
+  BARON: { spawn: 120, respawn: 60, hp: 3200, hpGrow: 4, dps: 22, buffDmg: 0.25, buffTime: 40, pushMul: 2.5 },
+  SCORE: { kill: 1, tower: 2, dragon: 3, baron: 4 }, // 제한 시간 종료 시 승부 점수
 
   // 선수 능력치 → 전투 반영
   ATK_PER: 0.03,           // 공격 1당 피해 +3% (10 기준)
@@ -66,31 +87,31 @@ G.CONFIG = {
   COND_MAX: 1.04,
   MENTAL_PER: 0.012,       // 3점 이상 뒤질 때 멘탈 1당 보정
 
-  // 진입 타이밍 (초)
-  ENTRY: { now: 0, together: 1.5, late: 3.5 },
+  // 진입 타이밍 (교전 합류 지연, 초)
+  ENTRY: { now: 0, together: 0.6, late: 1.5 },
 
   // 팀 전술
   TACTICS: {
-    aggressive: { name: '공격적', desc: '교전을 빨리 열고 적극적으로 진입. 초반 강세, 후반 약세.',
-      dmgEarly: 0.16, dmgLate: -0.03, retreatHp: 0.26, holdLine: 0, counterBonus: 0, objWeight: 1.2 },
-    balanced: { name: '균형', desc: '상황에 따라 교전/후퇴 판단. 보정치 없음.',
-      dmgEarly: 0, dmgLate: 0, retreatHp: 0.28, holdLine: 0, counterBonus: 0, objWeight: 0.9 },
-    defensive: { name: '수비적', desc: '진영 근처에서 버티다 받아치기. 역습 피해 보너스, 목표물 압박 약함.',
-      dmgEarly: 0, dmgLate: 0, retreatHp: 0.28, holdLine: 0.42, counterBonus: 0.02, objWeight: 0.35 },
-    tricky: { name: '변칙적', desc: '기습·분산 압박·페이크 후퇴. 성공하면 대박, 실패하면 각개격파. 같은 상대에게 연속 사용 시 간파당함.',
-      dmgEarly: 0, dmgLate: 0, retreatHp: 0.28, holdLine: 0, counterBonus: 0, objWeight: 0.8 }
+    aggressive: { name: '공격적', desc: '갱킹·카운터 정글·한타를 적극적으로. 초반 강세, 후반 약세.',
+      dmgEarly: 0.18, dmgLate: -0.02, retreatHp: 0.27, holdLine: 0, counterBonus: 0, objWeight: 1.3, gank: -0.6, invade: 0.35, callAdv: 0 },
+    balanced: { name: '균형', desc: '라인전 후 상황에 따라 오브젝트·교전 판단. 보정치 없음.',
+      dmgEarly: 0.03, dmgLate: 0.03, retreatHp: 0.3, holdLine: 0, counterBonus: 0, objWeight: 1.0, gank: 0, invade: 0.12, callAdv: 0 },
+    defensive: { name: '수비적', desc: '포탑 근처에서 버티며 받아치기. 아군 진영 교전 피해 보너스, 오브젝트 욕심 적음.',
+      dmgEarly: -0.03, dmgLate: 0, retreatHp: 0.3, holdLine: 0.47, counterBonus: 0.03, objWeight: 0.5, gank: 0.6, invade: 0.03, callAdv: 1 },
+    tricky: { name: '변칙적', desc: '기습 갱킹·스플릿 푸시·페이크 후퇴. 성공하면 대박, 실패하면 각개격파. 같은 상대에게 연속 사용 시 간파당함.',
+      dmgEarly: 0, dmgLate: 0, retreatHp: 0.28, holdLine: 0, counterBonus: 0, objWeight: 0.9, gank: 0, invade: 0.15, callAdv: 0 }
   },
 
   // 변칙 전술 세부
   TRICK: {
-    firstPlay: 5,          // 첫 시도(초)
-    interval: 17,          // 시도 간격(초)
+    firstPlay: 35,         // 첫 시도(초)
+    interval: 28,          // 시도 간격(초)
     roll: 8,               // 성공 판정 난수 폭
     readPenaltyPerUse: 3,  // 같은 상대에게 연속 사용 1회당 성공 판정 -3
     inMatchPenalty: 0.8,   // 같은 경기 안에서 시도할 때마다 -1.5
-    ambushDmg: 1.8, ambushStun: 1.8, ambushSpeed: 0.35,
+    ambushDmg: 1.3, ambushStun: 1.5, ambushSpeed: 0.35,
     exposedDef: -0.25, exposedTime: 6,
-    splitObjBonus: 1.0, splitTime: 12, splitTeamDmg: 0.12, splitFailDmg: -0.15, splitFailTime: 8,
+    splitObjBonus: 1.0, splitTime: 20, splitTeamDmg: 0.08, splitFailDmg: -0.15, splitFailTime: 8,
     fakeRetreat: 1.2, fakeDmg: 0.02, fakeSpd: 0.1, fakeTime: 3, fakeSlow: 0.1,
     fakeFailDmg: -0.25, fakeFailTime: 5, fakeFailSlow: 0.3
   },
@@ -124,7 +145,14 @@ G.CONFIG = {
   PATCH_STEP: 0.07
 };
 
-// 역할 / 상성
+// 포지션 (선수) — 탑/정글/미드/원딜/서폿
+G.POS = { top: '탑', jungle: '정글', mid: '미드', adc: '원딜', support: '서폿' };
+G.POS_ORDER = ['top', 'jungle', 'mid', 'adc', 'support'];
+G.POS_COLOR = { top: '#f08c00', jungle: '#2f9e44', mid: '#1c7ed6', adc: '#e03131', support: '#ae3ec9' };
+G.POS_LANE = { top: 'top', jungle: null, mid: 'mid', adc: 'bot', support: 'bot' };
+G.POS_STAT = { top: 'def', jungle: 'iq', mid: 'atk', adc: 'phys', support: 'team' }; // 포지션별 특화 능력치
+
+// 영웅 클래스 / 상성
 G.ROLES = { tank: '탱커', fighter: '전사', marksman: '원거리 딜러', mage: '마법사', support: '서포터' };
 G.ROLE_ORDER = ['tank', 'fighter', 'mage', 'marksman', 'support'];
 G.ARCH = { dive: '돌진형', ranged: '원거리형', tank: '탱커형' };
@@ -136,81 +164,82 @@ G.ARCH_BEATS = { dive: 'ranged', ranged: 'tank', tank: 'dive' };
 //           heal(치유), shield(보호막), rally(강화), taunt(도발)
 // p: 위력(피해는 공격력 배수, 치유/보호막은 100 단위), cd: 쿨다운, r: 사거리, rad: 범위
 // armor: 받는 피해 감소 비율 (탱커 전용 패시브)
+// pos: 갈 수 있는 포지션 (첫 번째가 주 포지션)
 G.HEROES = [
-  { id: 'ironwall', name: '철벽', emoji: '🛡️', armor: 0.22, role: 'tank', arch: 'tank', hp: 1949, atk: 67, range: 45, spd: 74, as: 0.8,
+  { id: 'ironwall', name: '철벽', emoji: '🛡️', pos: ['top', 'support'], armor: 0.22, role: 'tank', arch: 'tank', hp: 1911, atk: 66, range: 45, spd: 74, as: 0.8,
     skill: { t: 'taunt', p: 2.0, cd: 9, r: 60, rad: 120, dur: 1.5 },
     ult: { t: 'aoe', p: 1.6, cd: 22, r: 60, rad: 140, stun: 1.2 } },
-  { id: 'golem', name: '바위거인', emoji: '🪨', armor: 0.24, role: 'tank', arch: 'tank', hp: 2054, atk: 64, range: 45, spd: 70, as: 0.75,
+  { id: 'golem', name: '바위거인', emoji: '🪨', pos: ['top', 'jungle'], armor: 0.24, role: 'tank', arch: 'tank', hp: 2017, atk: 63, range: 45, spd: 70, as: 0.75,
     skill: { t: 'stun', p: 1.1, cd: 8, r: 60, stun: 1.0 },
     ult: { t: 'aoe', p: 2.0, cd: 24, r: 60, rad: 120, stun: 0.9 } },
-  { id: 'frostguard', name: '서리방패', emoji: '❄️', armor: 0.15, role: 'tank', arch: 'tank', hp: 1687, atk: 59, range: 50, spd: 76, as: 0.8,
+  { id: 'frostguard', name: '서리방패', emoji: '❄️', pos: ['top', 'support'], armor: 0.15, role: 'tank', arch: 'tank', hp: 1674, atk: 59, range: 50, spd: 76, as: 0.8,
     skill: { t: 'aoe', p: 1.0, cd: 7, r: 60, rad: 110, slow: 0.4, slowDur: 2 },
     ult: { t: 'shield', p: 2.2, cd: 22, r: 200, rad: 220, all: true } },
-  { id: 'paladin', name: '수호기사', emoji: '⚜️', armor: 0.12, role: 'tank', arch: 'tank', hp: 1623, atk: 64, range: 45, spd: 78, as: 0.85,
+  { id: 'paladin', name: '수호기사', emoji: '⚜️', pos: ['support', 'top'], armor: 0.12, role: 'tank', arch: 'tank', hp: 1613, atk: 64, range: 45, spd: 78, as: 0.85,
     skill: { t: 'shield', p: 2.6, cd: 8, r: 200 },
     ult: { t: 'taunt', p: 3.5, cd: 24, r: 60, rad: 160, dur: 2.2 } },
 
-  { id: 'berserker', name: '광전사', emoji: '🪓', role: 'fighter', arch: 'dive', hp: 1137, atk: 62, range: 45, spd: 86, as: 1.0,
+  { id: 'berserker', name: '광전사', emoji: '🪓', pos: ['top', 'jungle'], role: 'fighter', arch: 'dive', hp: 1161, atk: 64, range: 45, spd: 86, as: 1.0,
     skill: { t: 'dash', p: 1.5, cd: 7, r: 240 },
     ult: { t: 'rally', p: 0, cd: 22, r: 0, self: true, as: 0.7, dmg: 0.2, dur: 5, lifesteal: 0.3 } },
-  { id: 'shadowblade', name: '그림자칼', emoji: '🗡️', role: 'fighter', arch: 'dive', hp: 891, atk: 73, range: 40, spd: 100, as: 1.1,
+  { id: 'shadowblade', name: '그림자칼', emoji: '🗡️', pos: ['jungle', 'mid'], role: 'fighter', arch: 'dive', hp: 888, atk: 73, range: 40, spd: 100, as: 1.1,
     skill: { t: 'dash', p: 1.7, cd: 8, r: 280, lowest: true },
     ult: { t: 'dash', p: 3.2, cd: 20, r: 320, lowest: true } },
-  { id: 'galespear', name: '질풍창', emoji: '🔱', role: 'fighter', arch: 'dive', hp: 1060, atk: 60, range: 70, spd: 88, as: 0.95,
+  { id: 'galespear', name: '질풍창', emoji: '🔱', pos: ['top', 'jungle'], role: 'fighter', arch: 'dive', hp: 1070, atk: 60, range: 70, spd: 88, as: 0.95,
     skill: { t: 'dash', p: 1.3, cd: 8, r: 250, stun: 0.6 },
     ult: { t: 'aoe', p: 2.4, cd: 22, r: 80, rad: 120 } },
-  { id: 'beast', name: '야수', emoji: '🐺', role: 'fighter', arch: 'dive', hp: 1168, atk: 59, range: 45, spd: 90, as: 1.0,
+  { id: 'beast', name: '야수', emoji: '🐺', pos: ['jungle', 'top'], role: 'fighter', arch: 'dive', hp: 1175, atk: 59, range: 45, spd: 90, as: 1.0,
     skill: { t: 'drain', p: 1.5, cd: 6, r: 60, heal: 0.6 },
     ult: { t: 'drain', p: 3.0, cd: 20, r: 60, heal: 0.8 } },
-  { id: 'thunderfist', name: '번개주먹', emoji: '⚡', role: 'fighter', arch: 'dive', hp: 986, atk: 64, range: 45, spd: 92, as: 1.05,
+  { id: 'thunderfist', name: '번개주먹', emoji: '⚡', pos: ['jungle', 'mid'], role: 'fighter', arch: 'dive', hp: 1001, atk: 65, range: 45, spd: 92, as: 1.05,
     skill: { t: 'stun', p: 1.3, cd: 8, r: 60, stun: 0.8 },
     ult: { t: 'aoe', p: 2.2, cd: 22, r: 60, rad: 110, stun: 1.0 } },
 
-  { id: 'hawkeye', name: '매의눈', emoji: '🏹', role: 'marksman', arch: 'ranged', hp: 605, atk: 56, range: 220, spd: 80, as: 1.0,
+  { id: 'hawkeye', name: '매의눈', emoji: '🏹', pos: ['adc'], role: 'marksman', arch: 'ranged', hp: 596, atk: 55, range: 220, spd: 80, as: 1.0,
     skill: { t: 'snipe', p: 2.0, cd: 8, r: 320 },
     ult: { t: 'snipe', p: 4.2, cd: 22, r: 450 } },
-  { id: 'powder', name: '화약사수', emoji: '💣', role: 'marksman', arch: 'ranged', hp: 678, atk: 58, range: 200, spd: 78, as: 0.95,
+  { id: 'powder', name: '화약사수', emoji: '💣', pos: ['adc', 'mid'], role: 'marksman', arch: 'ranged', hp: 688, atk: 59, range: 200, spd: 78, as: 0.95,
     skill: { t: 'aoe', p: 1.3, cd: 7, r: 220, rad: 80 },
     ult: { t: 'aoe', p: 2.6, cd: 22, r: 260, rad: 120 } },
-  { id: 'rapid', name: '연사수', emoji: '🎯', role: 'marksman', arch: 'ranged', hp: 632, atk: 44, range: 210, spd: 82, as: 1.4,
+  { id: 'rapid', name: '연사수', emoji: '🎯', pos: ['adc'], role: 'marksman', arch: 'ranged', hp: 626, atk: 44, range: 210, spd: 82, as: 1.4,
     skill: { t: 'rally', p: 0, cd: 10, r: 0, self: true, as: 0.5, dur: 4 },
     ult: { t: 'rally', p: 0, cd: 22, r: 0, self: true, as: 1.0, dmg: 0.3, dur: 5 } },
-  { id: 'moonbow', name: '은빛석궁', emoji: '🌙', role: 'marksman', arch: 'ranged', hp: 669, atk: 57, range: 230, spd: 80, as: 0.9,
+  { id: 'moonbow', name: '은빛석궁', emoji: '🌙', pos: ['adc'], role: 'marksman', arch: 'ranged', hp: 661, atk: 56, range: 230, spd: 80, as: 0.9,
     skill: { t: 'stun', p: 1.2, cd: 9, r: 240, slow: 0.5, slowDur: 2.5 },
     ult: { t: 'snipe', p: 3.6, cd: 22, r: 400 } },
 
-  { id: 'flame', name: '불꽃술사', emoji: '🔥', role: 'mage', arch: 'ranged', hp: 619, atk: 65, range: 190, spd: 78, as: 0.8,
+  { id: 'flame', name: '불꽃술사', emoji: '🔥', pos: ['mid'], role: 'mage', arch: 'ranged', hp: 623, atk: 65, range: 190, spd: 78, as: 0.8,
     skill: { t: 'aoe', p: 1.6, cd: 7, r: 220, rad: 90 },
     ult: { t: 'aoe', p: 3.0, cd: 24, r: 240, rad: 130 } },
-  { id: 'icewitch', name: '얼음마녀', emoji: '🧊', role: 'mage', arch: 'ranged', hp: 634, atk: 55, range: 190, spd: 78, as: 0.8,
+  { id: 'icewitch', name: '얼음마녀', emoji: '🧊', pos: ['mid', 'support'], role: 'mage', arch: 'ranged', hp: 622, atk: 54, range: 190, spd: 78, as: 0.8,
     skill: { t: 'aoe', p: 1.2, cd: 7, r: 220, rad: 90, slow: 0.45, slowDur: 2.5 },
     ult: { t: 'aoe', p: 2.2, cd: 24, r: 240, rad: 130, stun: 1.4 } },
-  { id: 'stormcaller', name: '번개술사', emoji: '🌩️', role: 'mage', arch: 'ranged', hp: 597, atk: 66, range: 200, spd: 80, as: 0.8,
+  { id: 'stormcaller', name: '번개술사', emoji: '🌩️', pos: ['mid', 'adc'], role: 'mage', arch: 'ranged', hp: 600, atk: 66, range: 200, spd: 80, as: 0.8,
     skill: { t: 'stun', p: 1.5, cd: 8, r: 220, stun: 0.9 },
     ult: { t: 'aoe', p: 2.8, cd: 22, r: 260, rad: 110 } },
-  { id: 'vampire', name: '흡혈마', emoji: '🦇', role: 'mage', arch: 'dive', hp: 819, atk: 60, range: 150, spd: 84, as: 0.9,
+  { id: 'vampire', name: '흡혈마', emoji: '🦇', pos: ['mid', 'jungle'], role: 'mage', arch: 'dive', hp: 802, atk: 59, range: 150, spd: 84, as: 0.9,
     skill: { t: 'drain', p: 1.5, cd: 6, r: 180, heal: 0.7 },
     ult: { t: 'aoe', p: 2.2, cd: 22, r: 120, rad: 130, drain: 0.5 } },
 
-  { id: 'healer', name: '치유사', emoji: '💚', role: 'support', arch: 'ranged', hp: 694, atk: 36, range: 180, spd: 80, as: 0.8,
-    skill: { t: 'heal', p: 2.6, cd: 6, r: 240 },
-    ult: { t: 'heal', p: 2.4, cd: 22, r: 999, all: true } },
-  { id: 'bard', name: '음유시인', emoji: '🎵', role: 'support', arch: 'ranged', hp: 770, atk: 38, range: 180, spd: 84, as: 0.8,
+  { id: 'healer', name: '치유사', emoji: '💚', pos: ['support'], role: 'support', arch: 'ranged', hp: 709, atk: 37, range: 180, spd: 80, as: 0.8,
+    skill: { t: 'heal', p: 3.4, cd: 6, r: 240 },
+    ult: { t: 'heal', p: 3.0, cd: 22, r: 999, all: true } },
+  { id: 'bard', name: '음유시인', emoji: '🎵', pos: ['support'], role: 'support', arch: 'ranged', hp: 777, atk: 38, range: 180, spd: 84, as: 0.8,
     skill: { t: 'rally', p: 0, cd: 10, r: 200, rad: 200, as: 0.35, dur: 4 },
     ult: { t: 'shield', p: 2.0, cd: 22, r: 999, all: true } },
-  { id: 'spirit', name: '수호정령', emoji: '🌿', role: 'support', arch: 'tank', hp: 945, atk: 40, range: 120, spd: 80, as: 0.85,
-    skill: { t: 'shield', p: 2.4, cd: 7, r: 220 },
-    ult: { t: 'heal', p: 2.0, cd: 22, r: 300, rad: 300, all: true } },
-  { id: 'chain', name: '사슬주술사', emoji: '⛓️', armor: 0.05, role: 'support', arch: 'ranged', hp: 794, atk: 45, range: 190, spd: 80, as: 0.8,
+  { id: 'spirit', name: '수호정령', emoji: '🌿', pos: ['support'], role: 'support', arch: 'tank', hp: 967, atk: 40, range: 120, spd: 80, as: 0.85,
+    skill: { t: 'shield', p: 3.2, cd: 7, r: 220 },
+    ult: { t: 'heal', p: 2.6, cd: 22, r: 300, rad: 300, all: true } },
+  { id: 'chain', name: '사슬주술사', emoji: '⛓️', pos: ['support', 'mid'], armor: 0.05, role: 'support', arch: 'ranged', hp: 789, atk: 45, range: 190, spd: 80, as: 0.8,
     skill: { t: 'stun', p: 0.8, cd: 9, r: 220, stun: 1.1 },
     ult: { t: 'aoe', p: 1.4, cd: 22, r: 220, rad: 120, stun: 1.6 } },
-  { id: 'wardrum', name: '전쟁북', emoji: '🥁', role: 'support', arch: 'dive', hp: 1013, atk: 46, range: 50, spd: 86, as: 0.9,
+  { id: 'wardrum', name: '전쟁북', emoji: '🥁', pos: ['support', 'jungle'], role: 'support', arch: 'dive', hp: 1113, atk: 50, range: 50, spd: 86, as: 0.9,
     skill: { t: 'rally', p: 0, cd: 10, r: 200, rad: 200, dmg: 0.2, spd: 0.25, dur: 4 },
     ult: { t: 'taunt', p: 2.5, cd: 22, r: 60, rad: 140, dur: 1.8 } }
 ];
-// 기본 패치 기준 영웅 승률 (무작위 전투 3000판 시뮬레이션 결과, tools/sim-test.js 로 재측정 가능)
+// 기본 패치 기준 영웅 승률 (포지션에 맞춘 무작위 조합 3000판 시뮬레이션 결과, tools/sim-test.js 로 재측정 가능)
 // 티어리스트에서 경기 표본이 적을 때 예상치로 쓴다
-G.HERO_BASE_WR = {'ironwall': 0.504,  'golem': 0.445,  'frostguard': 0.466,  'paladin': 0.477,  'berserker': 0.512,  'shadowblade': 0.471,  'galespear': 0.477,  'beast': 0.491,  'thunderfist': 0.524,  'hawkeye': 0.529,  'powder': 0.484,  'rapid': 0.541,  'moonbow': 0.569,  'flame': 0.501,  'icewitch': 0.54,  'stormcaller': 0.529,  'vampire': 0.522,  'healer': 0.512,  'bard': 0.463,  'spirit': 0.502,  'chain': 0.444,  'wardrum': 0.5};
+G.HERO_BASE_WR = {'ironwall': 0.555,  'golem': 0.534,  'frostguard': 0.524,  'paladin': 0.493,  'berserker': 0.469,  'shadowblade': 0.503,  'galespear': 0.459,  'beast': 0.495,  'thunderfist': 0.498,  'hawkeye': 0.54,  'powder': 0.456,  'rapid': 0.486,  'moonbow': 0.566,  'flame': 0.476,  'icewitch': 0.578,  'stormcaller': 0.499,  'vampire': 0.531,  'healer': 0.457,  'bard': 0.464,  'spirit': 0.435,  'chain': 0.487,  'wardrum': 0.44};
 
 // 티어리스트 설정
 G.TIER = {
@@ -223,6 +252,27 @@ G.TIER = {
 
 G.HERO_BY_ID = {};
 G.HEROES.forEach(function (h) { G.HERO_BY_ID[h.id] = h; });
+
+// ---------- 맵 (720x720, 파랑 진영 왼쪽 아래 / 빨강 진영 오른쪽 위) ----------
+G.MAP = {
+  W: 720, H: 720,
+  BASES: [{ x: 58, y: 662 }, { x: 662, y: 58 }],
+  // 라인 경로: 파랑 우물(0) → 빨강 우물(1)
+  LANES: {
+    top: [[58, 662], [62, 62], [662, 58]],
+    mid: [[58, 662], [662, 58]],
+    bot: [[58, 662], [658, 658], [662, 58]]
+  },
+  LANE_NAMES: { top: '탑', mid: '미드', bot: '바텀' },
+  // 파랑 기준 포탑 위치(경로 비율). 빨강은 1 - t
+  TOWERS: [{ tier: 'outer', t: 0.30 }, { tier: 'inner', t: 0.15 }],
+  CAMPS: [
+    { side: 0, x: 175, y: 330 }, { side: 0, x: 390, y: 545 },
+    { side: 1, x: 545, y: 390 }, { side: 1, x: 330, y: 175 }
+  ],
+  DRAGON: { x: 478, y: 478 },
+  BARON: { x: 242, y: 242 }
+};
 
 // ---------- 이름 풀 ----------
 G.NICK_A = ['신속', '철혈', '은하', '폭풍', '그늘', '번개', '백야', '청룡', '태양', '심연', '서리', '불꽃', '유성', '새벽', '야광',

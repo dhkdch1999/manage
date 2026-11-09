@@ -17,14 +17,14 @@ G.Player = {
   // tier: 평균 능력치 목표치
   generate: function (rng, id, tier, opts) {
     opts = opts || {};
-    var role = opts.role || rng.pick(G.ROLE_ORDER);
+    var role = opts.role || rng.pick(G.POS_ORDER);
     var age = opts.age || rng.int(17, 27);
     var stats = {};
     G.STAT_KEYS.forEach(function (k) {
       stats[k] = Math.round(G.clamp(tier + rng.range(-3, 3), 1, 20));
     });
     // 역할별 특화
-    var boost = { tank: 'def', fighter: 'atk', mage: 'atk', marksman: 'phys', support: 'team' }[role];
+    var boost = G.POS_STAT[role] || 'atk';
     stats[boost] = Math.min(20, stats[boost] + rng.int(1, 2));
     var ovr = G.Player.overallOf(stats);
     var youth = G.clamp((24 - age) / 7, 0, 1);
@@ -53,7 +53,7 @@ G.Player = {
     };
     // 숙련도: 선호 역할 영웅은 높게
     G.HEROES.forEach(function (h) {
-      var base = h.role === role ? rng.int(35, 75) : rng.int(3, 30);
+      var base = h.pos.indexOf(role) >= 0 ? rng.int(35, 75) : rng.int(3, 30);
       p.mastery[h.id] = base;
     });
     p.train = boost;

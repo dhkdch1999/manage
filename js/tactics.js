@@ -37,70 +37,56 @@ G.Tactics = {
   },
 
   // ---- 변칙 플레이 ----
+  // 기습 갱킹 / 스플릿 푸시(분산 압박) / 페이크 후퇴
   tryPlay: function (b, side) {
     var cfg = G.CONFIG.TRICK;
     var S = b.sides[side], E = b.sides[1 - side];
     var mine = b.alive(side), theirs = b.alive(1 - side);
-    if (mine.length < 3) return;
+    if (mine.length < 3 || !theirs.length) return;
     var rng = b.rng;
+    var type = rng.pick(['ambush', 'split', 'fake']);
 
-    var types = ['ambush', 'fake'];
-    if (b.obj.alive) types.push('split', 'split');
-    var type = rng.pick(types);
-
-    // 성공 판정: 아군 운영·팀워크 vs 상대 운영
     var myIQ = avg(mine, function (u) { return (u.p.iq + u.p.team) / 2; });
-    var theirIQ = avg(theirs.length ? theirs : b.units.filter(function (u) { return u.side !== side; }),
-      function (u) { return u.p.iq; });
+    var theirIQ = avg(theirs, function (u) { return u.p.iq; });
     var penalty = S.readCount * cfg.readPenaltyPerUse + S.plays.length * cfg.inMatchPenalty;
-    var mineRoll = myIQ + rng.range(0, cfg.roll) - penalty;
-    var theirRoll = theirIQ + rng.range(0, cfg.roll) - 2.5;
-    var ok = mineRoll > theirRoll;
+    var ok = myIQ + rng.range(0, cfg.roll) - penalty > theirIQ + rng.range(0, cfg.roll) - 2.5;
     S.plays.push({ type: type, ok: ok, t: b.time });
 
-    var names = { ambush: '기습', split: '분산 압박', fake: '페이크 후퇴' };
+    var names = { ambush: '기습 갱킹', split: '스플릿 푸시', fake: '페이크 후퇴' };
     b.log((ok ? '🎭 ' : '❌ ') + S.name + ' ' + names[type] + (ok ? ' 성공!' : ' 간파당함'), side, ok ? 'trick-ok' : 'trick-fail');
     b.banner(S.name + ' — ' + names[type] + (ok ? ' 성공!' : ' 실패'), side, ok);
 
     if (type === 'ambush') {
-      var flankers = mine.slice().sort(function (a, c) {
-        return score(c) - score(a);
-        function score(u) { return (u.hero.arch === 'dive' ? 10 : 0) + u.p.phys; }
-      }).slice(0, 2);
-      // 상대 후열(딜러·서포터) 중 체력이 가장 낮은 대상을 노린다
-      var back = theirs.filter(function (e) { return e.hero.role === 'marksman' || e.hero.role === 'mage' || e.hero.role === 'support'; });
-      if (!back.length) back = theirs;
-      back.sort(function (a, c) { return a.hp - c.hp; });
+      // 정글 + 미드(또는 돌진형)가 몰래 돌아가 상대 사이드 라이너를 노린다
+      var flankers = mine.slice().sort(function (a, c) { return sc(c) - sc(a); }).slice(0, 2);
+      function sc(u) { return (u.pos === 'jungle' ? 20 : u.pos === 'mid' ? 10 : 0) + (u.hero.arch === 'dive' ? 5 : 0) + u.p.phys * 0.1; }
+      var prey = theirs.slice().sort(function (a, c) { return (a.hp / a.maxhp + (a.pos === 'adc' || a.pos === 'top' ? -0.2 : 0)) - (c.hp / c.maxhp + (c.pos === 'adc' || c.pos === 'top' ? -0.2 : 0)); })[0];
       flankers.forEach(function (u) {
-        u.mode = 'flank';
-        u.flankTarget = back[0];
-        u.modeT = 3;
-        b.addBuff(u, 'spd', cfg.ambushSpeed, 3);
-        if (ok) {
-          u.ambush = true;
-          u.stealth = true; // 성공 시 우회하는 동안 상대가 발견하지 못함
-        } else {
-          b.addBuff(u, 'def', cfg.exposedDef, cfg.exposedTime);
-          E.focus = u; E.focusT = cfg.exposedTime;
-        }
+        u.mode = 'flank'; u.flankTarget = prey; u.modeT = 7; u.task = null;
+        b.addBuff(u, 'spd', cfg.ambushSpeed, 7);
+        if (ok) { u.ambush = true; u.stealth = true; }
+        else { b.addBuff(u, 'def', cfg.exposedDef, cfg.exposedTime + 4); E.focus = u; E.focusT = cfg.exposedTime + 4; }
       });
     } else if (type === 'split') {
-      var splitters = mine.filter(function (u) { return u.hero.role !== 'tank'; }).slice(0, 2);
-      splitters.forEach(function (u) {
-        u.mode = 'objective'; u.modeT = cfg.splitTime;
-        if (ok) b.addBuff(u, 'objdmg', cfg.splitObjBonus, cfg.splitTime);
+      // 탑 라이너가 반대편 라인을 밀고, 나머지는 오브젝트/미드 압박
+      var epic = b.baron.alive ? b.baron : b.dragon.alive ? b.dragon : null;
+      var splitter = mine.filter(function (u) { return u.pos === 'top'; })[0] || mine[0];
+      var splitLane = epic === b.dragon ? 'top' : epic === b.baron ? 'bot' : 'top';
+      splitter.task = { type: 'split', lane: splitLane }; splitter.taskT = b.time + cfg.splitTime;
+      if (ok) b.addBuff(splitter, 'objdmg', cfg.splitObjBonus, cfg.splitTime);
+      S.call = epic ? { type: 'obj', target: epic } : { type: 'push', lane: 'mid' };
+      S.callT = cfg.splitTime;
+      mine.forEach(function (u) {
+        if (u === splitter) return;
+        b.addBuff(u, 'dmg', ok ? cfg.splitTeamDmg : cfg.splitFailDmg, ok ? cfg.splitTime : cfg.splitFailTime);
+        u.task = null; u.thinkT = 0;
       });
-      if (ok) mine.forEach(function (u) { b.addBuff(u, 'dmg', cfg.splitTeamDmg, cfg.splitTime); });
-      if (!ok) mine.forEach(function (u) { b.addBuff(u, 'dmg', cfg.splitFailDmg, cfg.splitFailTime); });
-    } else if (type === 'fake') {
+      if (!ok) { E.focus = splitter; E.focusT = cfg.splitFailTime; }
+    } else {
       mine.forEach(function (u) {
         u.mode = 'fake'; u.modeT = cfg.fakeRetreat;
-        if (ok) {
-          u.afterFake = true;
-        } else {
-          b.addBuff(u, 'dmg', cfg.fakeFailDmg, cfg.fakeFailTime + cfg.fakeRetreat);
-          b.addBuff(u, 'slow', cfg.fakeFailSlow, cfg.fakeFailTime);
-        }
+        if (ok) u.afterFake = true;
+        else { b.addBuff(u, 'dmg', cfg.fakeFailDmg, cfg.fakeFailTime + cfg.fakeRetreat); b.addBuff(u, 'slow', cfg.fakeFailSlow, cfg.fakeFailTime); }
       });
     }
   },

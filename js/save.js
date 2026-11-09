@@ -2,7 +2,7 @@
 // save.js — localStorage 자동 저장 + JSON 내보내기/불러오기
 // =====================================================
 G.Save = {
-  KEY: 'esports-manager-save-v1',
+  KEY: 'esports-manager-save-v2', // v2: 포지션(탑·정글·미드·원딜·서폿) + 3라인 맵
   save: function () {
     if (!G.state) return;
     G.state.rngS = G.rng.s;

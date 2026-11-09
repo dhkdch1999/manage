@@ -43,11 +43,11 @@ G.League = (function () {
     st.teams[id] = t;
     if (div) st.divisions[div].push(id);
     // 역할별 1명씩 + 후보 1명
-    G.ROLE_ORDER.forEach(function (r) {
+    G.POS_ORDER.forEach(function (r) {
       var p = L.newPlayer(tier + rng().range(-0.6, 0.6), { role: r });
       L.joinTeam(p, t);
     });
-    t.starters = t.players.slice(0, 5); // 역할별 1명씩 선발
+    t.starters = t.players.slice(0, 5); // 포지션 순서(탑·정글·미드·원딜·서폿)대로 선발
     var sub = L.newPlayer(tier - 1, {});
     L.joinTeam(sub, t);
     return t;
@@ -70,28 +70,50 @@ G.League = (function () {
     var t = S().teams[p.teamId];
     if (t) {
       t.players = t.players.filter(function (x) { return x !== p.id; });
-      t.starters = t.starters.filter(function (x) { return x !== p.id; });
-      if (t.starters.length < 5) L.fillStarters(t);
+      var si = t.starters.indexOf(p.id);
+      if (si >= 0) { t.starters[si] = null; L.fillStarters(t); }
     }
     p.teamId = null;
     if (toFA) S().freeAgents.push(p.id);
   };
+  // 라인업: starters[i] = G.POS_ORDER[i] 포지션 선수 (빈자리는 null)
   L.autoStarters = function (t) {
-    var ps = t.players.map(L.p).sort(function (a, b) { return G.Player.overall(b) - G.Player.overall(a); });
-    t.starters = ps.slice(0, 5).map(function (p) { return p.id; });
+    t.starters = [null, null, null, null, null];
+    L.fillStarters(t);
   };
   L.fillStarters = function (t) {
-    var rest = t.players.filter(function (x) { return t.starters.indexOf(x) < 0; }).map(L.p)
-      .sort(function (a, b) { return G.Player.overall(b) - G.Player.overall(a); });
-    while (t.starters.length < 5 && rest.length) t.starters.push(rest.shift().id);
+    if (!t.starters || t.starters.length !== 5) t.starters = (t.starters || []).concat([null, null, null, null, null]).slice(0, 5);
+    t.starters = t.starters.map(function (id) { return id && t.players.indexOf(id) >= 0 ? id : null; });
+    // 1차: 주 포지션 선수 중 가장 잘하는 선수
+    G.POS_ORDER.forEach(function (pos, i) {
+      if (t.starters[i]) return;
+      var c = t.players.filter(function (x) { return t.starters.indexOf(x) < 0 && L.p(x).role === pos; }).map(L.p)
+        .sort(function (a, b) { return G.Player.overall(b) - G.Player.overall(a); });
+      if (c.length) t.starters[i] = c[0].id;
+    });
+    // 2차: 남은 선수로 채움
+    G.POS_ORDER.forEach(function (pos, i) {
+      if (t.starters[i]) return;
+      var c = t.players.filter(function (x) { return t.starters.indexOf(x) < 0; }).map(L.p)
+        .sort(function (a, b) { return G.Player.overall(b) - G.Player.overall(a); });
+      if (c.length) t.starters[i] = c[0].id;
+    });
   };
+  L.lineupFull = function (t) { return t.starters.length === 5 && t.starters.every(function (x) { return !!x; }); };
+  // 선수를 포지션 슬롯에 배치 (원래 그 자리 선수와 맞바꿈)
+  L.setPosition = function (t, pid, idx) {
+    var cur = t.starters.indexOf(pid), occ = t.starters[idx];
+    t.starters[idx] = pid;
+    if (cur >= 0) t.starters[cur] = occ || null;
+  };
+  L.posOf = function (t, pid) { var i = t.starters.indexOf(pid); return i >= 0 ? G.POS_ORDER[i] : null; };
 
   L.p = function (id) { return S().players[id]; };
   L.t = function (id) { return S().teams[id]; };
   L.user = function () { return S().teams[S().userTeamId]; };
   L.strength = function (teamId) {
     var t = L.t(teamId);
-    var ps = t.starters.map(L.p);
+    var ps = t.starters.filter(Boolean).map(L.p);
     if (!ps.length) return 0;
     return ps.reduce(function (s, p) { return s + G.Player.overall(p); }, 0) / ps.length;
   };
@@ -245,7 +267,7 @@ G.League = (function () {
   };
 
   // ---------- 경기 ----------
-  L.sidePlayers = function (teamId) { return L.t(teamId).starters.map(L.p); };
+  L.sidePlayers = function (teamId) { var t = L.t(teamId); if (!L.lineupFull(t)) L.fillStarters(t); return t.starters.map(L.p); };
 
   L.aiTactic = function (teamId, oppId) {
     var t = L.t(teamId);
@@ -263,8 +285,9 @@ G.League = (function () {
         name: t.name, color: si === 0 ? '#4dabf7' : '#ff6b6b', tactic: tactics[si],
         readCount: tactics[si] === 'tricky' ? G.Tactics.readCount(st.trickMemory, tid, opp) : 0,
         units: draft.picks[si].map(function (pk) {
-          return { player: L.p(pk.playerId), heroId: pk.heroId, order: (orders && orders[si] && orders[si][pk.playerId]) || { focus: 'auto', entry: 'now' } };
-        })
+          return { player: L.p(pk.playerId), heroId: pk.heroId, pos: draft.pos[si][pk.playerId],
+            order: (orders && orders[si] && orders[si][pk.playerId]) || { focus: 'auto', entry: 'now' } };
+        }).sort(function (a, b) { return G.POS_ORDER.indexOf(a.pos) - G.POS_ORDER.indexOf(b.pos); })
       };
     });
     return new G.Battle({ seed: rng().int(1, 1e9), heroMods: st.heroMods, sides: sides, render: render });
@@ -464,7 +487,6 @@ G.League = (function () {
       L.autoStarters(t);
     });
     var u = L.user();
-    u.starters = u.starters.filter(function (id) { return u.players.indexOf(id) >= 0; });
     L.fillStarters(u);
     L.news('📅 시즌 ' + st.season + ' 종료. 이적시장이 열렸습니다.');
   };
@@ -542,7 +564,7 @@ G.League = (function () {
     p.salary = salary; p.years = years; p.train = 'atk'; p.morale = 70;
     L.joinTeam(p, u);
     st.scouted[pid] = true;
-    if (u.starters.length < 5) L.fillStarters(u);
+    L.fillStarters(u);
     L.news('✍️ ' + p.nick + ' 영입 (연봉 ' + salary + '만원 / ' + years + '년' + (fee ? ', 이적료 ' + fee.toLocaleString() + '만원' : '') + ')');
     return r;
   };
